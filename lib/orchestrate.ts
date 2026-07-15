@@ -1,6 +1,11 @@
-import { MODEL_CATALOG, qualityBiasFromPref, tierForScore } from "./config";
+import {
+  MODEL_CATALOG,
+  capabilityToleranceFromPref,
+  qualityBiasFromPref,
+  tierForScore,
+} from "./config";
 import { assessComplexity } from "./scoring";
-import { computeCost, getNiceDefault, selectModel } from "./router";
+import { computeCost, dominantSkill, getNiceDefault, selectModel } from "./router";
 import type { CostBreakdown, ModelCostEstimate, Provider, RouteResult } from "./types";
 
 export interface RouteOptions {
@@ -27,10 +32,23 @@ export function route({
   const adjustedScore = Math.max(0, Math.min(100, assessment.score + qualityBias));
   const effectiveTier = tierForScore(adjustedScore);
 
-  const selectedModel = selectModel(effectiveTier, inTok, outTok, providerPref);
   // Baseline = the chosen NICE standard, falling back to the configured default.
   const niceDefaultModel =
     MODEL_CATALOG.find((m) => m.id === standardId) ?? getNiceDefault();
+
+  // Pick the best-value model within the tier for the prompt's dominant skill:
+  // the cheapest that stays within the slider-controlled quality tolerance of
+  // the strongest. May legitimately land on the standard when it's the best fit.
+  const skill = dominantSkill(assessment);
+  const tolerance = capabilityToleranceFromPref(qualityPref);
+  const selectedModel = selectModel(
+    effectiveTier,
+    inTok,
+    outTok,
+    skill,
+    tolerance,
+    providerPref,
+  );
 
   const selectedCost = computeCost(selectedModel, inTok, outTok);
   const defaultCost = computeCost(niceDefaultModel, inTok, outTok);
@@ -62,6 +80,7 @@ export function route({
     qualityBias,
     adjustedScore,
     effectiveTier,
+    dominantSkill: skill,
     selected: { model: selectedModel, cost: selectedCost, isSelected: true, isNiceDefault: selectedModel.id === niceDefaultModel.id, vsDefault: savingsVsDefault },
     niceDefault: { model: niceDefaultModel, cost: defaultCost, isSelected: selectedModel.id === niceDefaultModel.id, isNiceDefault: true, vsDefault: vsDefaultOf(defaultCost) },
     savingsVsDefault,

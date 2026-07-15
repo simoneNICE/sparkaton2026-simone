@@ -1,5 +1,12 @@
 import { MODEL_CATALOG, NICE_DEFAULT_ID } from "./config";
-import type { CostBreakdown, ModelSpec, Provider, Tier } from "./types";
+import type {
+  ComplexityAssessment,
+  CostBreakdown,
+  ModelSpec,
+  Provider,
+  Skill,
+  Tier,
+} from "./types";
 
 export function computeCost(
   model: ModelSpec,
@@ -29,17 +36,34 @@ export const getNiceDefault = (): ModelSpec => byId(NICE_DEFAULT_ID);
 // prompts (very complex or high-stakes domains).
 const TOP_TIER: Tier = Math.max(...MODEL_CATALOG.map((m) => m.tier)) as Tier;
 
-// Tier -> concrete model, within the required capability tier and honoring the
-// provider preference:
-//   • lower tiers  -> cheapest model (downgrade to save cost)
-//   • top tier     -> most capable model (quality-first: protect quality when
-//                     the prompt is risky, even if it costs more than the
-//                     standard). Capability is proxied by price within the tier.
-// The NICE standard is only the savings baseline — it is not pinned to a tier.
+// The prompt's dominant hard skill, used to pick a specialist within a tier.
+// Falls back to "general" when no code/reasoning/math signal is strong enough,
+// so easy and broad-language prompts route to a solid all-rounder rather than a
+// specialist. The threshold keeps keyword noise from masquerading as a skill.
+export function dominantSkill(assessment: ComplexityAssessment): Skill {
+  const pointsFor = (key: string) =>
+    assessment.contributions.find((c) => c.key === key)?.points ?? 0;
+  const skills: Skill[] = ["code", "reasoning", "math"];
+  const ranked = skills
+    .map((skill) => ({ skill, points: pointsFor(skill) }))
+    .sort((a, b) => b.points - a.points);
+  return ranked[0].points >= 5 ? ranked[0].skill : "general";
+}
+
+// Tier + dominant skill -> concrete model, honoring the provider preference.
+//   • lower tiers -> best value: the cheapest model whose capability on the
+//     dominant skill is within `tolerance` of the strongest model at this tier.
+//     A cheaper specialist wins when it's "good enough"; when only the strongest
+//     model clears the bar (e.g. the Sonnet standard on a broad task), that one
+//     is chosen even at zero saving — quality is not sacrificed to save cost.
+//   • top tier -> quality-first: the most capable model on the dominant skill,
+//     regardless of cost, because a prompt only reaches it when it is risky.
 export function selectModel(
   tier: Tier,
   inputTokens: number,
   outputTokens: number,
+  skill: Skill,
+  tolerance: number,
   providerPref?: Provider | "any",
 ): ModelSpec {
   let pool = MODEL_CATALOG.filter((m) => m.tier === tier);
@@ -50,11 +74,17 @@ export function selectModel(
   // Safety net: no model at this tier (shouldn't happen with the catalog above).
   if (!pool.length) return getNiceDefault();
 
-  const priced = pool
-    .map((m) => ({ m, cost: computeCost(m, inputTokens, outputTokens).totalCost }))
-    .sort((a, b) => a.cost - b.cost);
+  const cap = (m: ModelSpec) => m.capabilities[skill];
+  const price = (m: ModelSpec) => computeCost(m, inputTokens, outputTokens).totalCost;
 
-  // Quality-first at the top tier: pick the most capable (most expensive) model;
-  // otherwise the cheapest.
-  return tier >= TOP_TIER ? priced[priced.length - 1].m : priced[0].m;
+  if (tier >= TOP_TIER) {
+    // Quality-first: best on the needed skill, tie-broken by most capable overall.
+    return [...pool].sort((a, b) => cap(b) - cap(a) || price(b) - price(a))[0];
+  }
+
+  // Best value: among models within `tolerance` of the best skill capability,
+  // pick the cheapest. The bar keeps quality up; the price sort captures savings.
+  const bestCap = Math.max(...pool.map(cap));
+  const qualified = pool.filter((m) => cap(m) >= bestCap - tolerance);
+  return [...qualified].sort((a, b) => price(a) - price(b) || cap(b) - cap(a))[0];
 }

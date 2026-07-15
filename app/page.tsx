@@ -65,6 +65,35 @@ const EXAMPLES: { label: string; group: ExampleGroup; prompt: string }[] = [
     prompt:
       "Given tables users(id, name) and orders(id, user_id, total), write a SQL query for the top 5 users by total spend.",
   },
+  {
+    // Standard tier, code-dominant → routes to a code specialist below Sonnet.
+    group: "medium",
+    label: "Refactor SQL subquery",
+    prompt:
+      "Refactor this SQL query for performance and explain the change: SELECT * FROM orders WHERE user_id IN (SELECT id FROM users).",
+  },
+  {
+    // Standard tier, math-dominant → routes to a math specialist below Sonnet.
+    group: "medium",
+    label: "Dice probability",
+    prompt:
+      "Calculate the probability of rolling two dice and getting a sum of 7, and show the steps.",
+  },
+  {
+    // Standard tier, reasoning-dominant → routes to a reasoning specialist below Sonnet.
+    group: "medium",
+    label: "SQL vs NoSQL",
+    prompt:
+      "Compare SQL and NoSQL databases and recommend one for an e-commerce catalog.",
+  },
+  {
+    // High-stakes, general-dominant → no cheaper model is close enough on
+    // quality, so the router correctly stays on the Sonnet standard (0% saving).
+    group: "medium",
+    label: "GDPR audit summary (stays on Sonnet)",
+    prompt:
+      "Summarize the key GDPR compliance obligations in this data processing contract for our upcoming audit.",
+  },
 
   // — Coding —
   {
@@ -307,12 +336,83 @@ const QUALITY_OPTIONS: { value: number; label: string }[] = [
   { value: 100, label: "🎯 Max quality" },
 ];
 
+// Routing algorithms we use / will use. All shown active in this POC.
+const ROUTING_ALGORITHMS: {
+  id: string;
+  title: string;
+  subtitle: string;
+  description: string;
+  active: boolean;
+}[] = [
+  {
+    id: "recall",
+    title: "Learned",
+    subtitle: "leverages existing data",
+    description:
+      "Chooses the model by looking at history: it finds the most similar past requests and routes to the cheapest model that gave a good answer back then.",
+    active: true,
+  },
+  {
+    id: "signals",
+    title: "Metadata-Based",
+    subtitle: "transparent rules on metadata",
+    description:
+      "Decides by applying transparent rules to the request's metadata (complexity, domain, customer, constraints), without ever calling an LLM.",
+    active: true,
+  },
+  {
+    id: "verdict",
+    title: "Judged",
+    subtitle: "uses an LLM to decide",
+    description:
+      "A small, cheap model assesses the difficulty of the request (or the quality of a first answer) and determines whether a more powerful model is needed.",
+    active: true,
+  },
+  {
+    id: "tempo",
+    title: "Timing",
+    subtitle: "exploits latency headroom",
+    description:
+      "Routes based on the required response time: picks the cheapest model among those fast enough to meet the SLA.",
+    active: true,
+  },
+];
+
 const TIER_LABEL: Record<number, string> = {
   1: "Economy",
   2: "Standard",
   3: "Premium",
 };
 const TIER_COLOR: Record<number, string> = { 1: "var(--green)", 2: "var(--amber)", 3: "var(--red)" };
+
+// Task-affinity skills used to pick a specialist within a tier (see lib/router.ts).
+type SkillKey = "code" | "reasoning" | "math" | "general";
+const SKILL_META: Record<SkillKey, { label: string; icon: string }> = {
+  code: { label: "Code", icon: "💻" },
+  reasoning: { label: "Reasoning", icon: "🧩" },
+  math: { label: "Math", icon: "🔢" },
+  general: { label: "General", icon: "💬" },
+};
+
+// Small inline capability bar (0..1) — visualizes a model's affinity on a skill.
+function CapBar({ value, highlight }: { value: number; highlight?: boolean }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
+      <div style={{ width: 46, height: 6, background: "var(--panel-2)", borderRadius: 4, overflow: "hidden" }}>
+        <div
+          style={{
+            width: `${Math.round(value * 100)}%`,
+            height: "100%",
+            background: highlight ? "var(--accent)" : "var(--border)",
+          }}
+        />
+      </div>
+      <span style={{ fontVariantNumeric: "tabular-nums", color: highlight ? "var(--text)" : "var(--muted)", width: 26, textAlign: "right" }}>
+        {value.toFixed(2)}
+      </span>
+    </div>
+  );
+}
 
 function usd(n: number): string {
   if (n === 0) return "$0";
@@ -331,6 +431,12 @@ export default function Home() {
   const [exampleLabel, setExampleLabel] = useState(EXAMPLES[0].label);
   const [standardId, setStandardId] = useState<string>(NICE_DEFAULT_ID);
   const [qualityPref, setQualityPref] = useState(50);
+  // Which routing algorithms are selected. Purely cosmetic for now — toggling
+  // doesn't change the actual routing (still metadata-based).
+  const [selectedAlgos, setSelectedAlgos] = useState<string[]>(
+    ROUTING_ALGORITHMS.filter((x) => x.active).map((x) => x.id),
+  );
+  const [hoveredAlgo, setHoveredAlgo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<RouteResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -469,28 +575,124 @@ export default function Home() {
             }}
           />
 
-          {/* Quality vs cost preference */}
+          {/* Quality vs cost preference — hidden for now; defaults to Balanced (50) */}
+          {false && (
+            <div style={{ marginTop: 16 }}>
+              <label style={{ fontSize: 13, color: "var(--muted)", display: "flex", alignItems: "center", gap: 8 }}>
+                Quality vs cost&nbsp;
+                <select
+                  value={qualityPref}
+                  onChange={(e) => setQualityPref(Number(e.target.value))}
+                  style={{
+                    background: "var(--panel-2)",
+                    color: "var(--text)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    padding: "4px 8px",
+                  }}
+                >
+                  {QUALITY_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
+
+          {/* Routing algorithm — which strategy decides the model */}
           <div style={{ marginTop: 16 }}>
-            <label style={{ fontSize: 13, color: "var(--muted)", display: "flex", alignItems: "center", gap: 8 }}>
-              Quality vs cost&nbsp;
-              <select
-                value={qualityPref}
-                onChange={(e) => setQualityPref(Number(e.target.value))}
-                style={{
-                  background: "var(--panel-2)",
-                  color: "var(--text)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 8,
-                  padding: "4px 8px",
-                }}
-              >
-                {QUALITY_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 8 }}>
+              Routing algorithm
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: 8,
+              }}
+            >
+              {ROUTING_ALGORITHMS.map((algo) => {
+                const checked = selectedAlgos.includes(algo.id);
+                return (
+                  <label
+                    key={algo.id}
+                    onMouseEnter={() => setHoveredAlgo(algo.id)}
+                    onMouseLeave={() => setHoveredAlgo((h) => (h === algo.id ? null : h))}
+                    style={{
+                      position: "relative",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "10px 12px",
+                      borderRadius: 10,
+                      border: "1px solid var(--border)",
+                      background: "var(--panel-2)",
+                      cursor: "pointer",
+                      transition: "border-color 120ms ease, background 120ms ease",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) =>
+                        setSelectedAlgos((prev) =>
+                          e.target.checked
+                            ? [...prev, algo.id]
+                            : prev.filter((id) => id !== algo.id),
+                        )
+                      }
+                      style={{
+                        width: 17,
+                        height: 17,
+                        accentColor: "var(--accent)",
+                        cursor: "pointer",
+                        flexShrink: 0,
+                      }}
+                    />
+                    <span style={{ lineHeight: 1.3 }}>
+                      <span
+                        style={{
+                          display: "block",
+                          fontSize: 13,
+                          fontWeight: 700,
+                          color: checked ? "var(--text)" : "var(--muted)",
+                        }}
+                      >
+                        {algo.title}
+                      </span>
+                      <span style={{ display: "block", fontSize: 11.5, color: "var(--muted)", marginTop: 1 }}>
+                        {algo.subtitle}
+                      </span>
+                    </span>
+
+                    {hoveredAlgo === algo.id && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          bottom: "calc(100% + 8px)",
+                          left: 0,
+                          right: 0,
+                          zIndex: 20,
+                          background: "var(--bg)",
+                          color: "var(--text)",
+                          border: "1px solid var(--accent)",
+                          borderRadius: 10,
+                          padding: "10px 12px",
+                          fontSize: 12,
+                          fontWeight: 400,
+                          lineHeight: 1.45,
+                          boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
+                        }}
+                      >
+                        {algo.description}
+                      </div>
+                    )}
+                  </label>
+                );
+              })}
+            </div>
           </div>
 
           <div
@@ -596,6 +798,30 @@ export default function Home() {
                       {TIER_LABEL[result.effectiveTier]}
                     </span>
                   </div>
+                  {/* Task affinity — which skill drove the specialist choice */}
+                  <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span
+                      title="Dominant task detected from the prompt. Within the chosen tier the router picks the best-value model for this skill."
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: "var(--accent)",
+                        border: "1px solid var(--accent)",
+                        background: "rgba(91,157,255,0.10)",
+                        borderRadius: 999,
+                        padding: "2px 10px",
+                      }}
+                    >
+                      {SKILL_META[result.dominantSkill as SkillKey].icon} Task affinity:{" "}
+                      {SKILL_META[result.dominantSkill as SkillKey].label}
+                    </span>
+                    <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                      picked as the best-value{" "}
+                      {SKILL_META[result.dominantSkill as SkillKey].label.toLowerCase()} model in{" "}
+                      {TIER_LABEL[result.effectiveTier]} (affinity{" "}
+                      {result.selected.model.capabilities[result.dominantSkill as SkillKey].toFixed(2)})
+                    </span>
+                  </div>
                   <div style={{ marginTop: 6, fontSize: 13, color: "var(--muted)" }}>
                     Est. cost {usd(result.selected.cost.totalCost)} · ~{a.estInputTokens} in / ~
                     {a.estOutputTokens} out tokens
@@ -611,9 +837,15 @@ export default function Home() {
 
             {/* Comparison table */}
             <section style={{ ...panel, padding: 18 }}>
-              <h2 style={{ fontSize: 15, fontWeight: 700, margin: "0 0 12px" }}>
+              <h2 style={{ fontSize: 15, fontWeight: 700, margin: "0 0 4px" }}>
                 Cost comparison — all models for this prompt
               </h2>
+              <p style={{ fontSize: 12, color: "var(--muted)", margin: "0 0 12px" }}>
+                The <strong style={{ color: "var(--text)" }}>Skill fit</strong> column shows each
+                model's affinity for the detected task ({SKILL_META[result.dominantSkill as SkillKey].icon}{" "}
+                {SKILL_META[result.dominantSkill as SkillKey].label}). Within a tier the router prefers
+                the cheapest model whose affinity is close enough to the best.
+              </p>
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
@@ -621,6 +853,9 @@ export default function Home() {
                       <th style={th}>Model</th>
                       <th style={th}>Provider</th>
                       <th style={th}>Class</th>
+                      <th style={{ ...th, textAlign: "right" }}>
+                        Skill fit ({SKILL_META[result.dominantSkill as SkillKey].label})
+                      </th>
                       <th style={{ ...th, textAlign: "right" }}>Est. cost / call</th>
                       <th style={{ ...th, textAlign: "right" }}>vs Default</th>
                       <th style={th}></th>
@@ -643,6 +878,12 @@ export default function Home() {
                           <td style={td}>{c.model.provider}</td>
                           <td style={{ ...td, color: TIER_COLOR[c.model.tier] }}>
                             {TIER_LABEL[c.model.tier]}
+                          </td>
+                          <td style={{ ...td, textAlign: "right" }}>
+                            <CapBar
+                              value={c.model.capabilities[result.dominantSkill as SkillKey]}
+                              highlight={c.isSelected}
+                            />
                           </td>
                           <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                             {usd(c.cost.totalCost)}

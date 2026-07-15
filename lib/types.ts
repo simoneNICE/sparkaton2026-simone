@@ -4,6 +4,15 @@ export type Provider = "anthropic" | "amazon" | "google" | "openai" | "alibaba";
 
 export type Tier = 1 | 2 | 3; // 1 = cheapest, 3 = most capable
 
+// Skill axes used to pick the right model within a tier. "general" covers broad
+// language / summarization / instruction-following when no hard skill dominates.
+export type Skill = "code" | "reasoning" | "math" | "general";
+
+// Per-model capability on each skill, 0..1. Rough, demo-grade estimates that
+// give each model a niche — they are what let the router pick a *specialist*
+// within a tier instead of always collapsing to the cheapest model.
+export type ModelCapabilities = Record<Skill, number>;
+
 export interface ModelSpec {
   id: string;
   displayName: string;
@@ -12,6 +21,7 @@ export interface ModelSpec {
   // Price in USD per 1M tokens.
   inputCostPer1M: number;
   outputCostPer1M: number;
+  capabilities: ModelCapabilities;
 }
 
 // A single scoring dimension and how much it contributed to the final score.
@@ -62,6 +72,8 @@ export interface RouteResult {
   qualityBias: number; // from the quality/cost slider (-35..+35)
   adjustedScore: number; // raw score + quality bias, clamped 0..100
   effectiveTier: 1 | 2 | 3; // tier chosen from the adjusted score
+  // The prompt's dominant skill, which decided the specialist within the tier.
+  dominantSkill: Skill;
   selected: ModelCostEstimate;
   niceDefault: ModelCostEstimate; // Sonnet — the savings baseline
   // Savings vs the NICE Default. Positive = cheaper than default (downgraded),
