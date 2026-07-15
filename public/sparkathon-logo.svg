@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 150" fill="none" role="img" aria-label="Sparkathon">
+  <!-- Wordmark -->
+  <text x="18" y="70" font-family="Arial, Helvetica, sans-serif" font-weight="800"
+        font-size="58" letter-spacing="1">
+    <tspan fill="#ffffff">SPARK</tspan><tspan fill="#5b9dff">ATHON</tspan>
+  </text>
+
+  <!-- Dot row leading into the burst -->
+  <g fill="#5b9dff">
+    <circle cx="24"  cy="112" r="3"/>
+    <circle cx="60"  cy="112" r="3"/>
+    <circle cx="96"  cy="112" r="3.2"/>
+    <circle cx="132" cy="112" r="3.4"/>
+    <circle cx="168" cy="112" r="3.6"/>
+    <circle cx="204" cy="112" r="3.8"/>
+    <circle cx="240" cy="112" r="4"/>
+    <circle cx="276" cy="112" r="4.4"/>
+    <circle cx="312" cy="112" r="5"/>
+    <circle cx="352" cy="112" r="6.5"/>
+  </g>
+
+  <!-- Firework burst around the final node -->
+  <g stroke-width="2.4" stroke-linecap="round">
+    <line x1="352" y1="112" x2="352" y2="86"  stroke="#22d3ee"/>
+    <line x1="352" y1="112" x2="374" y2="92"  stroke="#5b9dff"/>
+    <line x1="352" y1="112" x2="386" y2="104" stroke="#a855f7"/>
+    <line x1="352" y1="112" x2="392" y2="116" stroke="#ec4899"/>
+    <line x1="352" y1="112" x2="386" y2="128" stroke="#ef4444"/>
+    <line x1="352" y1="112" x2="374" y2="134" stroke="#f97316"/>
+    <line x1="352" y1="112" x2="352" y2="138" stroke="#34d399"/>
+    <line x1="352" y1="112" x2="332" y2="132" stroke="#22d3ee"/>
+    <line x1="352" y1="112" x2="322" y2="120" stroke="#5b9dff"/>
+  </g>
+  <g fill="none" stroke-width="2.4" stroke-linecap="round">
+    <line x1="376" y1="82"  x2="384" y2="74"  stroke="#22d3ee"/>
+    <line x1="398" y1="100" x2="410" y2="96"  stroke="#a855f7"/>
+    <line x1="402" y1="120" x2="416" y2="122" stroke="#ec4899"/>
+    <line x1="388" y1="140" x2="398" y2="150" stroke="#34d399"/>
+  </g>
+</svg>

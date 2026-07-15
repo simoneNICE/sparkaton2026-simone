@@ -11,3 +11,4 @@ tsconfig.tsbuildinfo
 # env files — keep the example, ignore real ones
 .env*
 !.env.example
+.vercel

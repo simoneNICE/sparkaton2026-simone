@@ -2,29 +2,298 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { RouteResult } from "@/lib/types";
+import { MODEL_CATALOG, NICE_DEFAULT_ID } from "@/lib/config";
 
-const EXAMPLES: { label: string; prompt: string }[] = [
-  { label: "Simple", prompt: "Translate 'good morning, how are you?' into Italian." },
-  { label: "Creative", prompt: "Write a short 4-line poem about the sea at dawn." },
+// Sentinel shown in the dropdown when the user has typed a custom prompt that
+// doesn't match any example.
+const CUSTOM_LABEL = "✎ Custom prompt";
+
+// Ordered complexity buckets shown as <optgroup> headers in the example
+// dropdown, so the expected difficulty of each prompt is explicit.
+type ExampleGroup = "easy" | "creative" | "medium" | "coding" | "hard";
+const EXAMPLE_GROUPS: { key: ExampleGroup; label: string }[] = [
+  { key: "easy", label: "🟢 Easy — expected Economy" },
+  { key: "creative", label: "✍️ Creative (short) — expected Economy" },
+  { key: "medium", label: "🟡 Medium — expected Standard" },
+  { key: "coding", label: "💻 Coding — Standard / Premium" },
+  { key: "hard", label: "🔴 Hard reasoning — expected Premium" },
+];
+
+const EXAMPLES: { label: string; group: ExampleGroup; prompt: string }[] = [
+  // — Easy → Economy —
+  { group: "easy", label: "Greeting translation", prompt: "Translate 'good morning, how are you?' into Italian." },
+  { group: "easy", label: "Capital city", prompt: "What is the capital of Australia?" },
+  { group: "easy", label: "Date formatting", prompt: "Reformat the date '2026-07-15' as 'July 15, 2026'." },
+  { group: "easy", label: "Yes/no fact", prompt: "Is water an element? Answer yes or no in one sentence." },
+  { group: "easy", label: "Word count", prompt: "How many words are in the sentence 'The quick brown fox jumps'?" },
+  { group: "easy", label: "Simple math", prompt: "What is 17 multiplied by 24?" },
+  { group: "easy", label: "Synonym", prompt: "Give me three synonyms for the word 'happy'." },
+
+  // — Creative (short) —
+  { group: "creative", label: "Haiku", prompt: "Write a haiku about the sea at dawn." },
+  { group: "creative", label: "Product name", prompt: "Suggest 5 catchy names for a plant-based energy drink." },
+  { group: "creative", label: "Tagline", prompt: "Write a one-line marketing slogan for a noise-cancelling headphone." },
+  { group: "creative", label: "Short poem", prompt: "Write a short 4-line poem about the sea at dawn." },
+
+  // — Medium → Standard —
   {
-    label: "Medium",
+    group: "medium",
+    label: "REST vs GraphQL",
     prompt:
       "Compare REST and GraphQL for a mobile app backend. List pros and cons, then recommend one.",
   },
   {
-    label: "Coding",
+    group: "medium",
+    label: "Summarize paragraph",
+    prompt:
+      "Summarize the following in two sentences: Machine learning models improve as they are exposed to more data, but they can also inherit biases present in that data, which raises fairness concerns in high-impact decisions.",
+  },
+  {
+    group: "medium",
+    label: "Professional email",
+    prompt:
+      "Write a polite professional email to a client asking to reschedule tomorrow's meeting to Friday afternoon.",
+  },
+  {
+    group: "medium",
+    label: "Regex",
+    prompt: "Write a regular expression that matches a valid IPv4 address, and explain each part.",
+  },
+  {
+    group: "medium",
+    label: "SQL query",
+    prompt:
+      "Given tables users(id, name) and orders(id, user_id, total), write a SQL query for the top 5 users by total spend.",
+  },
+
+  // — Coding —
+  {
+    group: "coding",
+    label: "Refactor to O(n)",
     prompt:
       "Here is a function:\n```js\nfunction dedupe(a){return a.filter((x,i)=>a.indexOf(x)===i)}\n```\nRefactor it to be O(n) and explain why the original is slower.",
   },
   {
-    label: "Hard reasoning",
+    group: "coding",
+    label: "Debug stack trace",
+    prompt:
+      "My Node app throws `TypeError: Cannot read properties of undefined (reading 'map')` at line 42 when the API returns an empty body. Explain the likely cause and how to fix it defensively.",
+  },
+  {
+    group: "coding",
+    label: "Explain closures",
+    prompt: "Explain JavaScript closures to a junior developer, with one concrete code example.",
+  },
+  {
+    group: "coding",
+    label: "Write unit test",
+    prompt:
+      "Write Jest unit tests for a function `add(a, b)` that returns their sum, covering typical and edge cases.",
+  },
+
+  // — Hard reasoning → Premium —
+  {
+    group: "hard",
+    label: "Prove sum of odds",
     prompt:
       "Analyze and prove why the sum of the first n odd numbers equals n^2. Then derive a closed-form and evaluate it for n=1..5 step by step.",
   },
   {
-    label: "High-stakes",
+    group: "hard",
+    label: "Logic puzzle",
     prompt:
-      "Review this employment contract clause for GDPR compliance risks and explain the legal reasoning behind each concern.",
+      "Three people (Alice, Bob, Carol) each have a different pet (cat, dog, fish). Alice doesn't own the dog. The fish owner sits next to Bob. Carol owns the cat. Determine who owns what, showing your reasoning.",
+  },
+  {
+    group: "hard",
+    label: "Architecture trade-offs",
+    prompt:
+      "We expect 50k requests/sec with strict p99 latency. Analyze the trade-offs between a monolith, microservices, and a serverless architecture for this workload, and recommend one with justification.",
+  },
+  {
+    group: "hard",
+    label: "Constraint planning",
+    prompt:
+      "Plan a 3-day conference schedule for 4 parallel tracks and 30 talks, where 6 speakers can each only present on day 1, and no track may have two talks in the same slot. Explain the scheduling strategy.",
+  },
+  {
+    group: "hard",
+    label: "Copilot AutoSummary — Example 1",
+    prompt: `You are tasked with analyzing customer service interactions as an agent. Follow this refined process:
+
+- **Analyze the exchange** between agent and customer.
+- **Analyze the additional interaction context** that may assist in your analysis if it is provided.
+- **Grasp full context** and flow of the conversation.
+- **Create a summary** with a professional and neutral tone, in english.
+- **Adhere to word limit** and ensure your response is exactly 300 words or fewer. This is a strict requirement.
+- **Verify** alignment with instructions and content accuracy.
+- Keep your output concise yet comprehensive, adhering strictly to the parameters.
+- **Apply the following additional instructions**:
+
+Produce a structured call summary using exactly these four labeled sections in this order:
+
+CALLER
+State who called using one of these identifiers: Member, Spouse, Dependent, Friend, or Other. Include the caller's name if available. Example: "Member – Margaret Roberts"
+
+REASON FOR CALL
+1–2 sentences maximum. State only the primary reason(s) the caller contacted support. Do not include any actions taken by the agent, outcomes, or resolutions.
+
+ACTIONS TAKEN
+Bullet list. Include only the specific steps the agent performed during the call. Do not include what was discussed, decided, or any outcomes. Each bullet must be a concrete, completed action (e.g., "Submitted refund request", "Updated meal preference to gluten-free on all future bookings").
+
+RESOLUTION
+Bullet list. State only what was resolved, decided, or determined. Do not repeat agent actions. Do not include pending or follow-up items.
+
+FOLLOW-UP
+Bullet list of next steps and pending items only. Each bullet must identify who is responsible (agent, member, airline, senior agent, etc.) and include a deadline or timeframe if known. Leave this section blank if no follow-up is needed.
+
+Additional rules:
+- Exclude all sensitive data (masked values, membership numbers, booking references, refund reference numbers).
+- Use gender-neutral pronouns (they/them) if referring to the caller.
+- Output "No meaningful dialogue" if the transcript contains no substantive conversation.
+
+here is the transcript
+
+Agent: Thank you for calling voyager this. Is darrell philbin account up corp m c nine hundred thirty two how can, I help.
+Customer: Hi I need to follow up. On a, refund. My membership is v are [MASKED].
+Agent: Of, course, can, I confirm your membership number please.
+Customer: Yes v are [MASKED].
+Agent: Thank you account is up margaret roberts with corp m z nine hundred thirty two.
+Customer: Great.
+Agent: Let me pull up. The booking I have b k [MASKED] for. The refund request.
+Customer: Yes b k [MASKED] oh.
+Agent: I can, see the cancellation has already been processed. The refund needs to be, initiated separately.
+Customer: How, much will be refunded?
+Agent: The refundable amount is three hundred eight, dollars based on the fare class and timing of cancellation.
+Customer: when will it appear?
+Agent: Refunds typically takes seven to ten, business days to appear on the original payment method.
+Customer: okay.
+Agent: I am submitting the refund request now. You will receive a confirmation by email within the hour.
+Customer: Good.
+Agent: The refund reference is c f o [MASKED], please retain that for your records.
+Customer: Got it cfo for. [MASKED].
+Agent: I have also added a. Note to your account so, any follow up can find this thread quickly.
+Customer: Thanks.
+Agent: Anything else. I can sort out for. You today.
+Customer: Actually yes what's the lounge access situation on my upcoming trip.
+Agent: For your trip on p, h x, s e a, e you have access, at both end points under your voyager. Select tier you can also bring one gas.
+Customer: What about during the layover it's a four hour gap?
+Agent: Yes the connecting airport lounges included as well, there's a, priority pass partner lounge plus the airlines own.
+Customer: which one's better at that airport.
+Agent: The airline lounge is quieter but smaller the partner lounge has hot food honestly i'd start at the partner and move if it's busy.
+Customer: Useful thanks i'll do that.
+Agent: I'll add a. Note to your, file so, the airline nose to expect you in their lounge if you do switch.
+Customer: Perfect I appreciate the heads up.
+Agent: I wanna make sure I haven't missed anything. You needed to raise today.
+Customer: I want to know, why nobody from your side called me back. Like they said. They would.
+Agent: That's a fair question and I don't have a clean answer i'm filing this as a, service failure and a. Senior agent will follow up.
+Customer: I want them to actually call not, just email.
+Agent: Anything else on this trip.
+Customer: Yes can, you check what meal preference I have on file.
+Agent: You're set to no preference across all carriers, which means standard meal did you wanna change that.
+Customer: Yes, gluten free going forward.
+Agent: Updated that applies to all future bookings for your existing, upcoming trip i'll need to push it to the airline manually done.
+Customer: Will I get a, confirmation that the airline received. It.
+Agent: Yes within twenty four hours if you don't see. It the gate agent can reconfirm. It check in.
+Customer: Good thanks for. The heads up on the timeline.
+Agent: Glad to help small thing, but. It makes a difference on a, long flight.
+Customer: Exactly especial.`,
+  },
+  {
+    group: "hard",
+    label: "Copilot AutoSummary — Example 2",
+    prompt: `You are tasked with analyzing customer service interactions as an agent. Follow this refined process:
+
+- **Analyze the exchange** between agent and customer.
+- **Analyze the additional interaction context** that may assist in your analysis if it is provided.
+- **Grasp full context** and flow of the conversation.
+- **Create a summary** with a professional and neutral tone, in english.
+- **Adhere to word limit** and ensure your response is exactly 300 words or fewer. This is a strict requirement.
+- **Verify** alignment with instructions and content accuracy.
+- Keep your output concise yet comprehensive, adhering strictly to the parameters.
+- **Apply the following additional instructions**:
+
+Summarize: In clear language, summarize the key points and order details of the conversation as a paragraph called "Summary: ". Then write out text called "Order details: " extracting the following information from the transcript:
+
+- Products mentioned as a comma separated list
+- Agent follow up needed (requested follow or offered follow up?)
+- Customer follow up needed?
+- What was the call disposition?
+- Did the call need to be transferred and why?
+- If the call was transferred, what category was it?
+
+When referencing the agent, use the label "Representative". When referencing the customer, use the label "Customer".
+
+Here are some important rules for each summary and order detail list:
+
+- For each order mentioned, write a separate order detail list. If there are multiple entries for a field, there should be multiple order details lists.
+- If the information is not provided, say: "Not provided".
+- Make sure "Not provided" is used for missing/not applicable information in the order detail list.
+- Make sure each order is separated into its own order list.
+- Make sure you extracted all the desired information.
+- Agent Follow up needed yes or no, if yes, why?
+- Does the Customer need to follow up, yes or no?
+- Assign call disposition based on list, if none match, create a one or two word disposition: Product Inquiry (Warranty), Repair/Remake, Damaged product, General Information, Order Status (Current or Past Due), Transfer, Quote, Change/Cancel, PowerView, HDIS, Online Tools (Direct Connect, eOrder), Hang Up, Sampling, Motorization, Status Past Due, Troubleshooting, Consumer Call Escalation, Credit/Trip Charge, Courier Status/Inquiry, Sales Contact, Installation, Marketing
+- Transferred, where and why?
+- Transferred call category: Standard Order, Out of Spec during order, Out of Spec prior to order, volume discount, Quote, Post-Sale Help, Trip Charge, Order Status, Plant Inquiry, Backorder, Order Change, Order Cancel, Product Info, Automation, Specialty Order, Order Exception, Contact Update, Samples, Rush Order, Expedite Shipping, Discount, Hold, Online Tools, Reassignment, Other
+
+Transcript:
+
+Agent: Hi, this is Jennifer with Three Day Blinds. I'll be assisting in booking your free consultation. Can I start by getting your first and last name, please?
+Client: Sure, it's all incorrectly, but I just want to double check. Your website said that Wisconsin is not covered in the United Lake Geneva, Wisconsin.
+Agent: Oh, what is the zip code there? Let me look that up.
+Client: [MASKED].
+Agent: All right, let me find out if you have service there just a second.
+Client: Okay. I did talk to somebody and she checked for a long, long time she came back and said yes, but I want to be doubly sure.
+Agent: Oh, okay. All right. Just a minute. Okay, so I'm showing that actually it was approved we can service that location. What is your name please?
+Client: (spells last name) K-U-R-O-G-H-L-I-A-N.
+Agent: (confirms) K U R O G H L I A N, correct. All right, and then how many windows do you want to submit? Oh, and I need the actual address. What is the address?
+Client: Okay, 526 Maxwell Street, Maxwell M-A-X-W-E-L-L, Maxwell Street Lake Geneva Wisconsin.
+Agent: Okay, Maxwell. All right. And do you have an email address I can send a confirmation to?
+Client: Yes, it's E and my last name: E-K-U-R-O-G-H-L-I-A-N.
+Agent: So E-K-U-R-O-G-H-L-I-A-N@gmail.com, correct?
+Client: That's it, yeah.
+Agent: All right, and then how many windows do you want us to measure here?
+Client: Well, it's done, but I need it. I want a consultation. I want shades, but I don't really know what kind, and I don't know the features of all kinds. And I do have a coupon for buy one and get one free.
+Agent: It's buy one get one 50% off. So for each one you purchase, you'll get one 50% off. It's a BOGO 50, that's what it is.
+Client: Oh, that's great. Okay, great. Do you have appointments pretty soon? I mean, I can't wait a few weeks.
+Agent: Yeah, let me look for that just a second. I'm just correcting this account here. Were you in a gated community, do you have any pets there?
+Client: Oh, no.
+Agent: Okay. Would you prefer a weekday or weekend appointment?
+Client: I don't care. I just like when...
+Agent: I have this Thursday the 16th at 9 a.m. Do you want that one?
+Client: No, I'm sorry. I can't do that.
+Agent: How about Tuesday, July 21st at 9 a.m., 11 or 3?
+Client: Yeah, 9 a.m.
+Agent: Okay, 9 a.m. on the 21st and the designer will arrive between 9 and 10.
+Client: Yeah, that's great. Yeah, that's fine. Well, yes, I want a phone number and a little bit more information about what the person is going to do. So what is the name of your business? Three-day blinds? Is that it?
+Agent: Three-day blinds, and the designer will come out, measure the windows, provide samples and a quote. And it's a free consultation. There's no obligation. The designer will call you the day before to confirm the appointment. And her name is Catherine with a C. Is there anything else? Oh, and you wanted shades or blinds or straight curtains or motorized?
+Client: I want change, not motorized.
+Agent: Okay. And how many did you want again? Was it eight? Ten?
+Client: Well, I said 10 but some are short. I do not want motorized, I don't think.
+Agent: Not motorized. Okay.
+Client: And then could you tell me how long it takes since I decide to do this? There's no obligation, right? And there's no charge for her to come?
+Agent: What was that last part? I'm sorry. I couldn't hear you very well.
+Client: I'm sorry. I put you on speaker. There's no obligation and there's no charge for her to come, right?
+Agent: Exactly. There's no obligation in the end. Free consultation.
+Client: Okay. And then if I choose to do this, which I'm inclined to do, how long does it take for this product to arrive and be installed?
+Agent: Okay, yes, so we do everything from measuring to install, so we're kind of like a white glove service for window treatments.
+Client: How long? What's the time frame? No, I need you on the time frame.
+Agent: So the motorized shades usually take a week and a half.
+Client: It would not be motorized.
+Agent: Oh, I'm sorry, not motorized. The regular ones take three business days to manufacture and then you do have the option to pay for the expedited shipping, so it's probably going to be about a week from the time you order to the time they're installed.
+Client: But they come in and install them, right? I can't do it.
+Agent: Yes, that's right. We install for you. So once they're manufactured, we ship them to the installer, then the installer will call you to book the appointment for the install as long as you're available. We'll get it done right away.
+Client: Okay, right away? It's not going to be like five weeks or anything like that, right?
+Agent: No, not at all. I got mine, I didn't even pay for expedited, out of mine in 12 days. Is there anything else?
+Client: Now, where is Catherine coming from?
+Agent: So the designer lives in your area and is coming from that area, either from another appointment or from the planner's home office. The designer will call you the day before to confirm and we'll give you the designer's phone number. But if you need to contact us before that, you can call us at any time at 800-493-1740.
+Client: Wait, 493?
+Agent: Yes, 800-493-1740.
+Client: Yes, [MASKED]. Okay, we covered it. I appreciate your help.
+Agent: All right, thank you.
+Client: Thank you so much!
+Agent: Bye-bye.`,
   },
 ];
 
@@ -59,12 +328,25 @@ const panel: React.CSSProperties = {
 
 export default function Home() {
   const [prompt, setPrompt] = useState(EXAMPLES[0].prompt);
-  const [providerPref, setProviderPref] = useState<"any" | "anthropic" | "openai">("any");
+  const [exampleLabel, setExampleLabel] = useState(EXAMPLES[0].label);
+  const [standardId, setStandardId] = useState<string>(NICE_DEFAULT_ID);
   const [qualityPref, setQualityPref] = useState(50);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<RouteResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const hasResult = useRef(false);
+
+  // Selecting an example loads its prompt AND clears any prior results, so it's
+  // obvious the results panel no longer reflects the current prompt.
+  function pickExample(label: string) {
+    const ex = EXAMPLES.find((e) => e.label === label);
+    if (!ex) return;
+    setPrompt(ex.prompt);
+    setExampleLabel(label);
+    setResult(null);
+    setError(null);
+    hasResult.current = false; // don't auto re-route on quality/provider change
+  }
 
   async function runRoute(q = qualityPref) {
     setLoading(true);
@@ -73,7 +355,7 @@ export default function Home() {
       const res = await fetch("/api/route", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, providerPref, qualityPref: q }),
+        body: JSON.stringify({ prompt, standardId, qualityPref: q }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Request failed");
@@ -90,63 +372,88 @@ export default function Home() {
   useEffect(() => {
     if (hasResult.current) runRoute();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [qualityPref, providerPref]);
+  }, [qualityPref, standardId]);
 
   const a = result?.assessment;
   const sv = result?.savingsVsDefault;
 
   return (
-    <main style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 20px 80px" }}>
+    <>
+      {/* Full-width dark logo bar */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          background: "#0a0f1c",
+          borderBottom: "1px solid #1e2a44",
+          padding: "10px 20px",
+        }}
+      >
+        <img
+          src="/sparkathon-logo.svg"
+          alt="Sparkathon"
+          height={28}
+          style={{ height: 28, width: "auto", display: "block" }}
+        />
+      </div>
+
+      <main style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 20px 80px" }}>
       <header style={{ marginBottom: 24 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span
-            style={{
-              fontSize: 12,
-              fontWeight: 700,
-              letterSpacing: 1,
-              color: "var(--accent)",
-              border: "1px solid var(--border)",
-              borderRadius: 999,
-              padding: "3px 10px",
-            }}
-          >
-            ROUTING ENGINE
-          </span>
-          <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>Metadata-Based Model Router</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>Better AI. Lower Cost. Smarter Routing.</h1>
         </div>
         <p style={{ color: "var(--muted)", marginTop: 8, fontSize: 14 }}>
           Pick the cheapest capable model <em>before</em> calling the LLM. Baseline is the{" "}
-          <strong style={{ color: "var(--text)" }}>NICE Default (Sonnet)</strong> — easy prompts get
-          downgraded to save cost, hard prompts stay on the Default or escalate to Premium.
+          <strong style={{ color: "var(--text)" }}>
+            NICE standard ({MODEL_CATALOG.find((m) => m.id === standardId)?.displayName ?? standardId})
+          </strong>{" "}
+          — easy prompts get downgraded to save cost; harder ones can cost more than the standard when
+          quality matters. Change the standard above to compare.
         </p>
       </header>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 20 }}>
         {/* INPUT PANEL */}
         <section style={{ ...panel, padding: 18 }}>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-            {EXAMPLES.map((ex) => (
-              <button
-                key={ex.label}
-                onClick={() => setPrompt(ex.prompt)}
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ fontSize: 13, color: "var(--muted)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              Example prompt&nbsp;
+              <select
+                value={exampleLabel}
+                onChange={(e) => pickExample(e.target.value)}
                 style={{
-                  fontSize: 12,
-                  padding: "5px 10px",
-                  borderRadius: 8,
-                  border: "1px solid var(--border)",
                   background: "var(--panel-2)",
                   color: "var(--text)",
-                  cursor: "pointer",
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  padding: "4px 8px",
+                  maxWidth: "100%",
                 }}
               >
-                {ex.label}
-              </button>
-            ))}
+                {exampleLabel === "" && (
+                  <option value="" disabled>
+                    {CUSTOM_LABEL}
+                  </option>
+                )}
+                {EXAMPLE_GROUPS.map((g) => (
+                  <optgroup key={g.key} label={g.label}>
+                    {EXAMPLES.filter((ex) => ex.group === g.key).map((ex) => (
+                      <option key={ex.label} value={ex.label}>
+                        {ex.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </label>
           </div>
 
           <textarea
             value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
+            onChange={(e) => {
+              setPrompt(e.target.value);
+              setExampleLabel(""); // typed prompt no longer matches an example
+            }}
             rows={6}
             placeholder="Type a prompt..."
             style={{
@@ -196,21 +503,25 @@ export default function Home() {
             }}
           >
             <label style={{ fontSize: 13, color: "var(--muted)" }}>
-              Provider preference&nbsp;
+              NICE standard (baseline)&nbsp;
               <select
-                value={providerPref}
-                onChange={(e) => setProviderPref(e.target.value as typeof providerPref)}
+                value={standardId}
+                onChange={(e) => setStandardId(e.target.value)}
+                title="The model NICE would use by default — every routed choice is compared against it"
                 style={{
                   background: "var(--panel-2)",
                   color: "var(--text)",
                   border: "1px solid var(--border)",
                   borderRadius: 8,
                   padding: "4px 8px",
+                  maxWidth: "100%",
                 }}
               >
-                <option value="any">Any (cheapest)</option>
-                <option value="anthropic">Anthropic</option>
-                <option value="openai">OpenAI</option>
+                {MODEL_CATALOG.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.displayName} — {TIER_LABEL[m.tier]}
+                  </option>
+                ))}
               </select>
             </label>
 
@@ -393,6 +704,7 @@ export default function Home() {
         )}
       </div>
     </main>
+    </>
   );
 }
 

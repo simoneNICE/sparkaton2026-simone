@@ -7,6 +7,9 @@ export interface RouteOptions {
   prompt: string;
   providerPref?: Provider | "any";
   qualityPref?: number; // 0 = max cost saving, 50 = neutral, 100 = max quality
+  // The NICE standard: the model NICE would use by default, i.e. the savings
+  // baseline every routed choice is compared against. Defaults to NICE_DEFAULT_ID.
+  standardId?: string;
 }
 
 // Pure routing decision — no LLM call. Deterministic, zero cost.
@@ -14,6 +17,7 @@ export function route({
   prompt,
   providerPref = "any",
   qualityPref = 50,
+  standardId,
 }: RouteOptions): RouteResult {
   const assessment = assessComplexity(prompt);
   const { estInputTokens: inTok, estOutputTokens: outTok } = assessment;
@@ -24,7 +28,9 @@ export function route({
   const effectiveTier = tierForScore(adjustedScore);
 
   const selectedModel = selectModel(effectiveTier, inTok, outTok, providerPref);
-  const niceDefaultModel = getNiceDefault();
+  // Baseline = the chosen NICE standard, falling back to the configured default.
+  const niceDefaultModel =
+    MODEL_CATALOG.find((m) => m.id === standardId) ?? getNiceDefault();
 
   const selectedCost = computeCost(selectedModel, inTok, outTok);
   const defaultCost = computeCost(niceDefaultModel, inTok, outTok);

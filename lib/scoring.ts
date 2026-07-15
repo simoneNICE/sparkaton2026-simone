@@ -5,8 +5,10 @@ import type { ComplexityAssessment, FeatureContribution } from "./types";
 const REASONING_WORDS = [
   "analyze", "analyse", "prove", "explain", "why", "compare", "reason", "evaluate",
   "deduce", "infer", "justify", "critique", "trade-off", "tradeoff", "pros and cons",
+  "determine", "conclude", "recommend", "assess", "puzzle", "derive",
   "analizza", "dimostra", "spiega", "perché", "perche", "confronta", "ragiona",
   "valuta", "deduci", "giustifica", "motiva", "pro e contro",
+  "determina", "concludi", "raccomanda", "ragionamento",
 ];
 
 const MATH_WORDS = [
@@ -43,7 +45,11 @@ function countMatches(haystack: string, needles: string[]): { count: number; hit
   const hits: string[] = [];
   for (const n of needles) {
     const esc = n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const re = new RegExp(`(?<![\\p{L}\\p{N}])${esc}(?![\\p{L}\\p{N}])`, "u");
+    // Start-of-word boundary on the left (so "sum" doesn't fire inside
+    // "summary" or "tax" inside "syntax"), but tolerate common inflectional
+    // suffixes on the right so "reason" matches "reasoning"/"reasons" and
+    // "trade-off" matches "trade-offs".
+    const re = new RegExp(`(?<![\\p{L}\\p{N}])${esc}(?:s|es|ed|ing|d)?(?![\\p{L}\\p{N}])`, "u");
     if (re.test(haystack)) hits.push(n);
   }
   return { count: hits.length, hits };
@@ -59,7 +65,7 @@ function detectCode(text: string): { signal: number; evidence: string } {
   const codeFence = /```/.test(text);
   const codeTokens = (text.match(/\b(function|def|class|import|const|let|var|return|public|void|SELECT|FROM|WHERE)\b/g) || []).length;
   const symbols = (text.match(/[{}();=<>]|=>|::|->/g) || []).length;
-  const askedToCode = /\b(code|debug|refactor|implement|function|bug|stack trace|regex|codice|programma|funzione|errore)\b/i.test(text);
+  const askedToCode = /\b(code|debug|refactor|implement|function|bug|stack trace|regex|sql|query|database|schema|endpoint|algorithm|api|codice|programma|funzione|errore|algoritmo)\b/i.test(text);
 
   let signal = 0;
   const reasons: string[] = [];

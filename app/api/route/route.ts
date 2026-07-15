@@ -11,8 +11,10 @@ export async function POST(req: Request) {
     }
     const providerPref: Provider | "any" = body.providerPref ?? "any";
     const qualityPref: number = typeof body.qualityPref === "number" ? body.qualityPref : 50;
+    const standardId: string | undefined =
+      typeof body.standardId === "string" ? body.standardId : undefined;
 
-    const result = route({ prompt, providerPref, qualityPref });
+    const result = route({ prompt, providerPref, qualityPref, standardId });
     return NextResponse.json(result);
   } catch (e) {
     return NextResponse.json(

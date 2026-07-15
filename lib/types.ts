@@ -1,6 +1,6 @@
 // Core domain types for the metadata-based model router POC.
 
-export type Provider = "anthropic" | "openai";
+export type Provider = "anthropic" | "amazon" | "google" | "openai" | "alibaba";
 
 export type Tier = 1 | 2 | 3; // 1 = cheapest, 3 = most capable
 
