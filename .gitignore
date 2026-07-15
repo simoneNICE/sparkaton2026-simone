@@ -1,0 +1,9 @@
+node_modules
+.next
+.DS_Store
+next-env.d.ts
+tsconfig.tsbuildinfo
+
+# env files — keep the example, ignore real ones
+.env*
+!.env.example
