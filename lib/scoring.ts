@@ -34,10 +34,17 @@ const MULTISTEP_CUES = [
   "passo passo", "poi", "successivamente", "inoltre", "infine",
 ];
 
+// Whole-word (Unicode-aware) matching, so "sum" doesn't fire on "summary",
+// "tax" on "syntax", or "story" on "history". Boundaries are only checked at
+// the ends of each needle, so multi-word phrases ("pros and cons") and
+// accented Italian keywords ("perché", "probabilità") still match correctly.
+// `haystack` is expected to be pre-lowercased.
 function countMatches(haystack: string, needles: string[]): { count: number; hits: string[] } {
   const hits: string[] = [];
   for (const n of needles) {
-    if (haystack.includes(n)) hits.push(n);
+    const esc = n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`(?<![\\p{L}\\p{N}])${esc}(?![\\p{L}\\p{N}])`, "u");
+    if (re.test(haystack)) hits.push(n);
   }
   return { count: hits.length, hits };
 }
@@ -160,14 +167,16 @@ export function assessComplexity(promptRaw: string): ComplexityAssessment {
   // --- aggregate ---
   const rawScore = contributions.reduce((sum, c) => sum + c.points, 0);
   const score = Math.max(0, Math.min(100, Math.round(rawScore)));
-  const tier = tierForScore(score);
+  // Tier implied by the raw score alone. The actual routing tier is decided in
+  // orchestrate.ts after applying the quality/cost slider bias.
+  const rawTier = tierForScore(score);
 
   // Output tokens are hard to know pre-call; heuristic estimate for cost preview.
   const estOutputTokens = Math.min(2000, Math.max(150, Math.round(tokens * 1.2)));
 
   return {
     score,
-    tier,
+    rawTier,
     contributions,
     estInputTokens: tokens,
     estOutputTokens,

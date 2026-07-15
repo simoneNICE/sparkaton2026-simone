@@ -4,6 +4,10 @@ node_modules
 next-env.d.ts
 tsconfig.tsbuildinfo
 
+# local, auto-generated Claude Code permission grants
+.claude/settings.json
+.claude/settings.local.json
+
 # env files — keep the example, ignore real ones
 .env*
 !.env.example

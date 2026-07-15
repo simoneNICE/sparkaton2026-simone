@@ -30,7 +30,9 @@ export interface FeatureContribution {
 
 export interface ComplexityAssessment {
   score: number; // 0..100
-  tier: Tier;
+  // Tier implied by the *raw* score alone (before the quality/cost slider bias).
+  // NOT the routing decision — that is RouteResult.effectiveTier. Informational only.
+  rawTier: Tier;
   contributions: FeatureContribution[];
   estInputTokens: number;
   estOutputTokens: number;
@@ -50,6 +52,9 @@ export interface ModelCostEstimate {
   cost: CostBreakdown;
   isSelected: boolean;
   isNiceDefault: boolean;
+  // Savings vs the NICE Default for this same request. Positive = cheaper than
+  // the Default, negative = more expensive. Computed in lib/, not the UI.
+  vsDefault: { absolute: number; percent: number };
 }
 
 export interface RouteResult {

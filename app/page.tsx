@@ -28,6 +28,16 @@ const EXAMPLES: { label: string; prompt: string }[] = [
   },
 ];
 
+// Discrete quality/cost preference levels. `value` feeds the same score bias
+// (qualityBiasFromPref): 0 → -35 (cheapest) … 100 → +35 (max quality).
+const QUALITY_OPTIONS: { value: number; label: string }[] = [
+  { value: 0, label: "💰 Max cost saving" },
+  { value: 25, label: "Cost-oriented" },
+  { value: 50, label: "Balanced" },
+  { value: 75, label: "Quality-oriented" },
+  { value: 100, label: "🎯 Max quality" },
+];
+
 const TIER_LABEL: Record<number, string> = {
   1: "Economy",
   2: "Standard",
@@ -152,23 +162,28 @@ export default function Home() {
             }}
           />
 
-          {/* Quality vs cost slider */}
+          {/* Quality vs cost preference */}
           <div style={{ marginTop: 16 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--muted)" }}>
-              <span>💰 Max cost saving</span>
-              <span style={{ color: "var(--text)", fontWeight: 700 }}>
-                {qualityPref < 40 ? "Cost-oriented" : qualityPref > 60 ? "Quality-oriented" : "Balanced"} ({qualityPref})
-              </span>
-              <span>🎯 Max quality</span>
-            </div>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              value={qualityPref}
-              onChange={(e) => setQualityPref(Number(e.target.value))}
-              style={{ width: "100%", marginTop: 6, accentColor: "var(--accent)" }}
-            />
+            <label style={{ fontSize: 13, color: "var(--muted)", display: "flex", alignItems: "center", gap: 8 }}>
+              Quality vs cost&nbsp;
+              <select
+                value={qualityPref}
+                onChange={(e) => setQualityPref(Number(e.target.value))}
+                style={{
+                  background: "var(--panel-2)",
+                  color: "var(--text)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  padding: "4px 8px",
+                }}
+              >
+                {QUALITY_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
 
           <div
@@ -235,7 +250,7 @@ export default function Home() {
               style={{
                 marginLeft: "auto",
                 background: "var(--accent)",
-                color: "#04122e",
+                color: "#ffffff",
                 fontWeight: 700,
                 border: "none",
                 borderRadius: 10,
@@ -302,11 +317,7 @@ export default function Home() {
                   </thead>
                   <tbody>
                     {result.catalog.map((c) => {
-                      const delta = result.niceDefault.cost.totalCost - c.cost.totalCost;
-                      const deltaPct =
-                        result.niceDefault.cost.totalCost > 0
-                          ? (delta / result.niceDefault.cost.totalCost) * 100
-                          : 0;
+                      const { absolute: delta, percent: deltaPct } = c.vsDefault;
                       return (
                         <tr
                           key={c.model.id}
