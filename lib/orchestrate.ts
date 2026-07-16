@@ -6,7 +6,17 @@ import {
 } from "./config";
 import { assessComplexity } from "./scoring";
 import { computeCost, dominantSkill, getNiceDefault, selectModel } from "./router";
-import type { CostBreakdown, ModelCostEstimate, Provider, RouteResult } from "./types";
+import { tryRecall } from "./recall";
+import type {
+  ComplexityAssessment,
+  CostBreakdown,
+  ModelCostEstimate,
+  ModelSpec,
+  Provider,
+  RouteResult,
+  Skill,
+  Tier,
+} from "./types";
 
 export interface RouteOptions {
   prompt: string;
@@ -17,39 +27,20 @@ export interface RouteOptions {
   standardId?: string;
 }
 
-// Pure routing decision — no LLM call. Deterministic, zero cost.
-export function route({
-  prompt,
-  providerPref = "any",
-  qualityPref = 50,
-  standardId,
-}: RouteOptions): RouteResult {
-  const assessment = assessComplexity(prompt);
+// Shared machinery: given a chosen model + assessment, build the cost
+// breakdowns, catalog comparison, and savings figures. Used by both the
+// metadata-based path and the recall (cache-hit) path so the two never
+// diverge on how the numbers are computed.
+function buildResult(
+  assessment: ComplexityAssessment,
+  selectedModel: ModelSpec,
+  effectiveTier: Tier,
+  skill: Skill,
+  qualityBias: number,
+  adjustedScore: number,
+  niceDefaultModel: ModelSpec,
+): Omit<RouteResult, "source" | "recall"> {
   const { estInputTokens: inTok, estOutputTokens: outTok } = assessment;
-
-  // Apply the quality/cost slider as a bias on the complexity score.
-  const qualityBias = qualityBiasFromPref(qualityPref);
-  const adjustedScore = Math.max(0, Math.min(100, assessment.score + qualityBias));
-  const effectiveTier = tierForScore(adjustedScore);
-
-  // Baseline = the chosen NICE standard, falling back to the configured default.
-  const niceDefaultModel =
-    MODEL_CATALOG.find((m) => m.id === standardId) ?? getNiceDefault();
-
-  // Pick the best-value model within the tier for the prompt's dominant skill:
-  // the cheapest that stays within the slider-controlled quality tolerance of
-  // the strongest. May legitimately land on the standard when it's the best fit.
-  const skill = dominantSkill(assessment);
-  const tolerance = capabilityToleranceFromPref(qualityPref);
-  const selectedModel = selectModel(
-    effectiveTier,
-    inTok,
-    outTok,
-    skill,
-    tolerance,
-    providerPref,
-  );
-
   const selectedCost = computeCost(selectedModel, inTok, outTok);
   const defaultCost = computeCost(niceDefaultModel, inTok, outTok);
 
@@ -86,4 +77,69 @@ export function route({
     savingsVsDefault,
     catalog,
   };
+}
+
+// Pure metadata-based routing decision — no LLM call, no cache lookup.
+export function route(options: RouteOptions): RouteResult {
+  const { prompt, providerPref = "any", qualityPref = 50, standardId } = options;
+  const assessment = assessComplexity(prompt);
+
+  // Apply the quality/cost slider as a bias on the complexity score.
+  const qualityBias = qualityBiasFromPref(qualityPref);
+  const adjustedScore = Math.max(0, Math.min(100, assessment.score + qualityBias));
+  const effectiveTier = tierForScore(adjustedScore);
+
+  // Baseline = the chosen NICE standard, falling back to the configured default.
+  const niceDefaultModel =
+    MODEL_CATALOG.find((m) => m.id === standardId) ?? getNiceDefault();
+
+  // Pick the best-value model within the tier for the prompt's dominant skill:
+  // the cheapest that stays within the slider-controlled quality tolerance of
+  // the strongest. May legitimately land on the standard when it's the best fit.
+  const skill = dominantSkill(assessment);
+  const tolerance = capabilityToleranceFromPref(qualityPref);
+  const selectedModel = selectModel(
+    effectiveTier,
+    assessment.estInputTokens,
+    assessment.estOutputTokens,
+    skill,
+    tolerance,
+    providerPref,
+  );
+
+  return {
+    ...buildResult(assessment, selectedModel, effectiveTier, skill, qualityBias, adjustedScore, niceDefaultModel),
+    source: "metadata",
+  };
+}
+
+// Same as route(), but first checks the "Learned" recall cache (lib/recall.ts)
+// for a previously-seen, similar-enough prompt. On a cache hit the stored
+// model is returned immediately, skipping the metadata scorer's tier/model
+// selection entirely (the complexity assessment is still computed, but only
+// for display — cost estimate, gauge, catalog comparison). On a miss, or when
+// recall is disabled, falls through to the ordinary metadata-based route().
+export async function routeWithRecall(
+  options: RouteOptions & { useRecall?: boolean },
+): Promise<RouteResult> {
+  if (options.useRecall) {
+    const hit = await tryRecall(options.prompt);
+    if (hit) {
+      const assessment = assessComplexity(options.prompt);
+      const niceDefaultModel =
+        MODEL_CATALOG.find((m) => m.id === options.standardId) ?? getNiceDefault();
+      const skill = dominantSkill(assessment);
+
+      return {
+        ...buildResult(assessment, hit.model, hit.model.tier, skill, 0, assessment.score, niceDefaultModel),
+        source: "recall",
+        recall: {
+          matchedPrompt: hit.matchedPrompt,
+          similarityScore: hit.similarityScore,
+          matchType: hit.matchType,
+        },
+      };
+    }
+  }
+  return route(options);
 }

@@ -431,8 +431,10 @@ export default function Home() {
   const [exampleLabel, setExampleLabel] = useState(EXAMPLES[0].label);
   const [standardId, setStandardId] = useState<string>(NICE_DEFAULT_ID);
   const [qualityPref, setQualityPref] = useState(50);
-  // Which routing algorithms are selected. Purely cosmetic for now — toggling
-  // doesn't change the actual routing (still metadata-based).
+  // Which routing algorithms are selected. Only "recall" ("Learned") currently
+  // changes behavior: when checked, the router checks the fuzzy-match history
+  // cache before falling back to metadata-based scoring. The others are
+  // still cosmetic placeholders.
   const [selectedAlgos, setSelectedAlgos] = useState<string[]>(
     ROUTING_ALGORITHMS.filter((x) => x.active).map((x) => x.id),
   );
@@ -461,7 +463,7 @@ export default function Home() {
       const res = await fetch("/api/route", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, standardId, qualityPref: q }),
+        body: JSON.stringify({ prompt, standardId, qualityPref: q, algos: selectedAlgos }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Request failed");
@@ -474,11 +476,12 @@ export default function Home() {
     }
   }
 
-  // Live re-route when the slider or provider changes (only after a first run).
+  // Live re-route when the slider, provider, or algorithm selection changes
+  // (only after a first run).
   useEffect(() => {
     if (hasResult.current) runRoute();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [qualityPref, standardId]);
+  }, [qualityPref, standardId, selectedAlgos]);
 
   const a = result?.assessment;
   const sv = result?.savingsVsDefault;
@@ -798,30 +801,55 @@ export default function Home() {
                       {TIER_LABEL[result.effectiveTier]}
                     </span>
                   </div>
-                  {/* Task affinity — which skill drove the specialist choice */}
-                  <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    <span
-                      title="Dominant task detected from the prompt. Within the chosen tier the router picks the best-value model for this skill."
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 700,
-                        color: "var(--accent)",
-                        border: "1px solid var(--accent)",
-                        background: "rgba(91,157,255,0.10)",
-                        borderRadius: 999,
-                        padding: "2px 10px",
-                      }}
-                    >
-                      {SKILL_META[result.dominantSkill as SkillKey].icon} Task affinity:{" "}
-                      {SKILL_META[result.dominantSkill as SkillKey].label}
-                    </span>
-                    <span style={{ fontSize: 12, color: "var(--muted)" }}>
-                      picked as the best-value{" "}
-                      {SKILL_META[result.dominantSkill as SkillKey].label.toLowerCase()} model in{" "}
-                      {TIER_LABEL[result.effectiveTier]} (affinity{" "}
-                      {result.selected.model.capabilities[result.dominantSkill as SkillKey].toFixed(2)})
-                    </span>
-                  </div>
+                  {result.source === "recall" && result.recall ? (
+                    // Recalled from the fuzzy-match history cache — a different
+                    // provenance than the metadata scorer, so it gets its own badge
+                    // instead of the "task affinity" narrative below.
+                    <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span
+                        title="This model wasn't computed — it was recalled from a similar prompt seen before."
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: "var(--green)",
+                          border: "1px solid var(--green)",
+                          background: "rgba(52,211,153,0.10)",
+                          borderRadius: 999,
+                          padding: "2px 10px",
+                        }}
+                      >
+                        🔁 Learned: recalled from history
+                      </span>
+                      <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                        {(result.recall.similarityScore * 100).toFixed(0)}% match to: “{result.recall.matchedPrompt}”
+                      </span>
+                    </div>
+                  ) : (
+                    /* Task affinity — which skill drove the specialist choice */
+                    <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span
+                        title="Dominant task detected from the prompt. Within the chosen tier the router picks the best-value model for this skill."
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: "var(--accent)",
+                          border: "1px solid var(--accent)",
+                          background: "rgba(91,157,255,0.10)",
+                          borderRadius: 999,
+                          padding: "2px 10px",
+                        }}
+                      >
+                        {SKILL_META[result.dominantSkill as SkillKey].icon} Task affinity:{" "}
+                        {SKILL_META[result.dominantSkill as SkillKey].label}
+                      </span>
+                      <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                        picked as the best-value{" "}
+                        {SKILL_META[result.dominantSkill as SkillKey].label.toLowerCase()} model in{" "}
+                        {TIER_LABEL[result.effectiveTier]} (affinity{" "}
+                        {result.selected.model.capabilities[result.dominantSkill as SkillKey].toFixed(2)})
+                      </span>
+                    </div>
+                  )}
                   <div style={{ marginTop: 6, fontSize: 13, color: "var(--muted)" }}>
                     Est. cost {usd(result.selected.cost.totalCost)} · ~{a.estInputTokens} in / ~
                     {a.estOutputTokens} out tokens

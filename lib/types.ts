@@ -67,6 +67,19 @@ export interface ModelCostEstimate {
   vsDefault: { absolute: number; percent: number };
 }
 
+// How the selected model was decided: "recall" = looked up from a similar
+// past prompt (see lib/recall.ts), "metadata" = computed by the complexity
+// scorer (lib/scoring.ts + lib/router.ts).
+export type RouteSource = "recall" | "metadata";
+
+// Present only when source === "recall" — the past prompt this request
+// matched against, and how confident that match was.
+export interface RecallInfo {
+  matchedPrompt: string;
+  similarityScore: number; // 0..1
+  matchType: string; // e.g. "fuzzy_text_match"
+}
+
 export interface RouteResult {
   assessment: ComplexityAssessment;
   qualityBias: number; // from the quality/cost slider (-35..+35)
@@ -84,4 +97,6 @@ export interface RouteResult {
   };
   // Every model's estimated cost for this request (for the comparison table).
   catalog: ModelCostEstimate[];
+  source: RouteSource;
+  recall?: RecallInfo;
 }
