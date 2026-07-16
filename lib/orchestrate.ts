@@ -1,11 +1,10 @@
 import {
   MODEL_CATALOG,
-  capabilityToleranceFromPref,
+  affinityFloorFromScore,
   qualityBiasFromPref,
-  tierForScore,
 } from "./config";
 import { assessComplexity } from "./scoring";
-import { computeCost, dominantSkill, getNiceDefault, selectModel } from "./router";
+import { computeCost, dominantSkill, getNiceDefault, selectByValue } from "./router";
 import type { CostBreakdown, ModelCostEstimate, Provider, RouteResult } from "./types";
 
 export interface RouteOptions {
@@ -30,25 +29,26 @@ export function route({
   // Apply the quality/cost slider as a bias on the complexity score.
   const qualityBias = qualityBiasFromPref(qualityPref);
   const adjustedScore = Math.max(0, Math.min(100, assessment.score + qualityBias));
-  const effectiveTier = tierForScore(adjustedScore);
 
   // Baseline = the chosen NICE standard, falling back to the configured default.
   const niceDefaultModel =
     MODEL_CATALOG.find((m) => m.id === standardId) ?? getNiceDefault();
 
-  // Pick the best-value model within the tier for the prompt's dominant skill:
-  // the cheapest that stays within the slider-controlled quality tolerance of
-  // the strongest. May legitimately land on the standard when it's the best fit.
+  // Value-based routing (cost-first): the task's complexity sets an affinity
+  // floor on its dominant skill, and the router picks the CHEAPEST model in the
+  // whole catalog that clears it. Stronger, pricier models are offered only as
+  // an approval-gated premium upgrade — never taken automatically.
   const skill = dominantSkill(assessment);
-  const tolerance = capabilityToleranceFromPref(qualityPref);
-  const selectedModel = selectModel(
-    effectiveTier,
+  const affinityFloor = affinityFloorFromScore(adjustedScore);
+  const { selected: selectedModel, premium: premiumModel } = selectByValue(
     inTok,
     outTok,
     skill,
-    tolerance,
+    affinityFloor,
     providerPref,
   );
+  // Tier is now just a display label for the chosen model, not a routing gate.
+  const effectiveTier = selectedModel.tier;
 
   const selectedCost = computeCost(selectedModel, inTok, outTok);
   const defaultCost = computeCost(niceDefaultModel, inTok, outTok);
@@ -62,6 +62,40 @@ export function route({
   };
 
   const savingsVsDefault = vsDefaultOf(selectedCost);
+
+  // Quality delta vs the baseline on the prompt's dominant skill. Capabilities
+  // live on a 0..1 scale, so the raw delta is tiny (hundredths). We also express
+  // it as a *relative* percentage, which reads as a meaningful figure in the UI.
+  const selectedCap = selectedModel.capabilities[skill];
+  const defaultCap = niceDefaultModel.capabilities[skill];
+  const qualityVsDefault = {
+    skill,
+    selectedCap,
+    defaultCap,
+    delta: Math.round((selectedCap - defaultCap) * 100) / 100,
+    relativePercent:
+      defaultCap > 0 ? Math.round(((selectedCap - defaultCap) / defaultCap) * 1000) / 10 : 0,
+    retainedPercent: defaultCap > 0 ? Math.round((selectedCap / defaultCap) * 1000) / 10 : 100,
+  };
+
+  // Approval-gated premium upgrade, priced and quantified vs the auto pick.
+  const premiumOption = premiumModel
+    ? (() => {
+        const cost = computeCost(premiumModel, inTok, outTok);
+        const premCap = premiumModel.capabilities[skill];
+        return {
+          model: premiumModel,
+          cost,
+          capDelta: Math.round((premCap - selectedCap) * 100) / 100,
+          qualityRelPercent:
+            selectedCap > 0 ? Math.round(((premCap - selectedCap) / selectedCap) * 1000) / 10 : 0,
+          costPercent:
+            selectedCost.totalCost > 0
+              ? Math.round(((cost.totalCost - selectedCost.totalCost) / selectedCost.totalCost) * 1000) / 10
+              : 0,
+        };
+      })()
+    : null;
 
   // Full catalog priced for this request (for the comparison table).
   const catalog: ModelCostEstimate[] = MODEL_CATALOG.map((m) => {
@@ -84,6 +118,9 @@ export function route({
     selected: { model: selectedModel, cost: selectedCost, isSelected: true, isNiceDefault: selectedModel.id === niceDefaultModel.id, vsDefault: savingsVsDefault },
     niceDefault: { model: niceDefaultModel, cost: defaultCost, isSelected: selectedModel.id === niceDefaultModel.id, isNiceDefault: true, vsDefault: vsDefaultOf(defaultCost) },
     savingsVsDefault,
+    qualityVsDefault,
+    affinityFloor,
+    premiumOption,
     catalog,
   };
 }
