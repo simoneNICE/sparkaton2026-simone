@@ -750,27 +750,14 @@ export default function Home() {
       <main style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 20px 80px" }}>
       <header style={{ marginBottom: 24 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          {/* Logo — a request hub routed to four colored model nodes. */}
-          <svg
-            width="36"
-            height="36"
-            viewBox="0 0 36 36"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            aria-hidden="true"
-            style={{ flexShrink: 0 }}
-          >
-            <rect width="36" height="36" rx="9" fill="#1a2536" />
-            <line x1="18" y1="18" x2="9" y2="9" stroke="#5b6b85" strokeWidth="1.5" />
-            <line x1="18" y1="18" x2="27" y2="9" stroke="#5b6b85" strokeWidth="1.5" />
-            <line x1="18" y1="18" x2="9" y2="27" stroke="#5b6b85" strokeWidth="1.5" />
-            <line x1="18" y1="18" x2="27" y2="27" stroke="#5b6b85" strokeWidth="1.5" />
-            <circle cx="9" cy="9" r="3.5" fill="#2563eb" />
-            <circle cx="27" cy="9" r="3.5" fill="#7c3aed" />
-            <circle cx="9" cy="27" r="3.5" fill="#059669" />
-            <circle cx="27" cy="27" r="3.5" fill="#d97706" />
-            <circle cx="18" cy="18" r="4" fill="#ffffff" />
-          </svg>
+          {/* Logo */}
+          <img
+            src="/logo.png"
+            alt="Smarter Routing"
+            width={36}
+            height={36}
+            style={{ width: 36, height: 36, flexShrink: 0 }}
+          />
           <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
             <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>Better AI. Lower Cost. Smarter Routing.</h1>
             <span style={{ color: "var(--text)", fontSize: 15, fontWeight: 600 }}>
