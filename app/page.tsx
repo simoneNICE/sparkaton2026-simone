@@ -527,6 +527,7 @@ export default function Home() {
   const [result, setResult] = useState<RouteResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const hasResult = useRef(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Selecting an example loads its prompt AND clears any prior results, so it's
   // obvious the results panel no longer reflects the current prompt.
@@ -596,73 +597,105 @@ export default function Home() {
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>Better AI. Lower Cost. Smarter Routing.</h1>
         </div>
-        <p style={{ color: "var(--muted)", marginTop: 8, fontSize: 14 }}>
-          Pick the cheapest capable model <em>before</em> calling the LLM. Baseline is the{" "}
+        <p style={{ color: "var(--text)", marginTop: 8, fontSize: 15, fontWeight: 600 }}>
+          Save up to 90% on AI costs—while getting better results.
+        </p>
+        <p style={{ color: "var(--muted)", marginTop: 6, fontSize: 14 }}>
+          Before every AI request, Smarter Routing analyzes your prompt and automatically selects the
+          best model for the job, balancing quality, speed, and cost in real time. Simple tasks go to
+          efficient models, complex ones to the most capable—so you always get the right model at the
+          lowest possible cost.
+        </p>
+        <p style={{ color: "var(--muted)", marginTop: 6, fontSize: 14 }}>
+          Try the Model Router below with our sample prompts or enter your own and see the savings
+          compared to the standard{" "}
           <strong style={{ color: "var(--text)" }}>
-            NICE standard ({MODEL_CATALOG.find((m) => m.id === standardId)?.displayName ?? standardId})
-          </strong>{" "}
-          — every routed choice is compared on <strong style={{ color: "var(--text)" }}>two axes</strong>:
-          cost and quality. Easy prompts drop to a cheaper model at equal-or-better quality; harder ones
-          cost more but buy a real capability upgrade. Change the standard above to compare.
+            NICE setup ({MODEL_CATALOG.find((m) => m.id === standardId)?.displayName ?? standardId})
+          </strong>
+          .
         </p>
       </header>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 20 }}>
-        {/* INPUT PANEL */}
-        <section style={{ ...panel, padding: 18 }}>
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ fontSize: 13, color: "var(--muted)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              Example prompt&nbsp;
-              <select
-                value={exampleLabel}
-                onChange={(e) => pickExample(e.target.value)}
-                style={{
-                  background: "var(--panel-2)",
-                  color: "var(--text)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 8,
-                  padding: "4px 8px",
-                  maxWidth: "100%",
-                }}
-              >
-                {exampleLabel === "" && (
-                  <option value="" disabled>
-                    {CUSTOM_LABEL}
-                  </option>
-                )}
-                {EXAMPLE_GROUPS.map((g) => (
-                  <optgroup key={g.key} label={g.label}>
-                    {EXAMPLES.filter((ex) => ex.group === g.key).map((ex) => (
-                      <option key={ex.label} value={ex.label}>
-                        {ex.label}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
+        {/* INPUT PANEL — two ways to begin, presented as a simple, linear,
+            step-by-step choice: pick an example first (the dropdown is the
+            first control users see), or type a prompt of their own. Both
+            steps share identical label styling for equal visual weight. */}
+        <section style={{ ...panel, padding: 24 }}>
+          {/* Step 1 (primary) — choose an example */}
+          <div>
+            <label htmlFor="example-select" style={{ display: "block", fontSize: 14.5, fontWeight: 700, marginBottom: 8 }}>
+              💡 Choose an example
             </label>
+            <select
+              id="example-select"
+              value={exampleLabel}
+              onChange={(e) => pickExample(e.target.value)}
+              style={{
+                width: "100%",
+                background: "var(--panel-2)",
+                color: "var(--text)",
+                border: "1px solid var(--border)",
+                borderRadius: 10,
+                padding: "10px 12px",
+                fontSize: 14,
+              }}
+            >
+              {exampleLabel === "" && (
+                <option value="" disabled>
+                  {CUSTOM_LABEL}
+                </option>
+              )}
+              {EXAMPLE_GROUPS.map((g) => (
+                <optgroup key={g.key} label={g.label}>
+                  {EXAMPLES.filter((ex) => ex.group === g.key).map((ex) => (
+                    <option key={ex.label} value={ex.label}>
+                      {ex.label}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+            <p style={{ fontSize: 12.5, color: "var(--muted)", margin: "8px 0 0" }}>
+              Select one of the example prompts to quickly test the models.
+            </p>
           </div>
 
-          <textarea
-            value={prompt}
-            onChange={(e) => {
-              setPrompt(e.target.value);
-              setExampleLabel(""); // typed prompt no longer matches an example
-            }}
-            rows={6}
-            placeholder="Type a prompt..."
-            style={{
-              width: "100%",
-              background: "var(--bg)",
-              color: "var(--text)",
-              border: "1px solid var(--border)",
-              borderRadius: 10,
-              padding: 12,
-              fontSize: 14,
-              fontFamily: "ui-monospace, monospace",
-              resize: "vertical",
-            }}
-          />
+          {/* OR divider */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "24px 0" }}>
+            <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+            <span style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", letterSpacing: 0.5 }}>OR</span>
+            <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+          </div>
+
+          {/* Step 2 — type your own prompt */}
+          <div>
+            <label htmlFor="prompt-textarea" style={{ display: "block", fontSize: 14.5, fontWeight: 700, marginBottom: 8 }}>
+              ✍️ Type your own prompt
+            </label>
+            <textarea
+              id="prompt-textarea"
+              ref={textareaRef}
+              value={prompt}
+              onChange={(e) => {
+                setPrompt(e.target.value);
+                setExampleLabel(""); // typed prompt no longer matches an example
+              }}
+              rows={6}
+              placeholder="Type your prompt here..."
+              style={{
+                width: "100%",
+                background: "var(--bg)",
+                color: "var(--text)",
+                border: "1px solid var(--border)",
+                borderRadius: 10,
+                padding: 12,
+                fontSize: 14,
+                fontFamily: "ui-monospace, monospace",
+                resize: "vertical",
+              }}
+            />
+          </div>
 
           {/* Cost vs quality stance — a three-state toggle the user controls. */}
           <div style={{ marginTop: 16 }}>
@@ -930,8 +963,8 @@ export default function Home() {
                       >
                         🔁 Learned: recalled from history
                       </span>
-                      <span style={{ fontSize: 12, color: "var(--muted)" }}>
-                        {(result.recall.similarityScore * 100).toFixed(0)}% match to: “{result.recall.matchedPrompt}”
+                      <span style={{ fontSize: 12, color: "var(--muted)" }} title={result.recall.matchedPrompt}>
+                        {(result.recall.similarityScore * 100).toFixed(0)}% match to one of the known prompts
                       </span>
                     </div>
                   ) : (
