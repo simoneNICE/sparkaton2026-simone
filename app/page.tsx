@@ -515,8 +515,30 @@ function CapBar({ value, highlight }: { value: number; highlight?: boolean }) {
 
 function usd(n: number): string {
   if (n === 0) return "$0";
-  if (Math.abs(n) < 0.01) return `$${n.toFixed(5)}`;
-  return `$${n.toFixed(4)}`;
+  const a = Math.abs(n);
+  if (a >= 0.01) return `$${n.toFixed(4)}`;
+  // Sub-cent values (a single cheap call, e.g. Gemma 3 4B) would round to
+  // $0.00000 at a fixed 5 decimals. Scale precision to the magnitude so the
+  // figure stays visible, capped at 10 decimals.
+  const digits = Math.min(10, Math.max(5, Math.ceil(-Math.log10(a)) + 2));
+  return `$${n.toFixed(digits)}`;
+}
+
+// Parse a fetch response as JSON, but fail with a readable message when the
+// server returns HTML instead (e.g. an AWS WAF block page). Without this the
+// browser throws the cryptic "Unexpected token '<' … is not valid JSON".
+async function readJson(res: Response) {
+  const contentType = res.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) {
+    await res.text().catch(() => "");
+    if (res.status === 403) {
+      throw new Error(
+        "Request blocked (HTTP 403) — likely the AWS WAF firewall. A large prompt can exceed the 8 KB body limit (SizeRestrictions_BODY rule).",
+      );
+    }
+    throw new Error(`Unexpected ${res.status} response (not JSON).`);
+  }
+  return res.json();
 }
 
 const panel: React.CSSProperties = {
@@ -576,7 +598,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt, standardId, qualityPref: q, algos: selectedAlgos }),
       });
-      const data = await res.json();
+      const data = await readJson(res);
       if (!res.ok) throw new Error(data.error || "Request failed");
       setResult(data as RouteResult);
       hasResult.current = true;
@@ -611,7 +633,7 @@ export default function Home() {
           defaultModelId: result.niceDefault.model.id,
         }),
       });
-      const data = await res.json();
+      const data = await readJson(res);
       if (!res.ok) throw new Error(data.error || "Request failed");
       setAnswers(data as AnswersResult);
     } catch (e) {
