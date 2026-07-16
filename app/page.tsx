@@ -1271,12 +1271,22 @@ function AnswerColumn({
   answer?: OneAnswer;
   loading: boolean;
 }) {
+  // Approximate cost of this real answer, from the actual Bedrock token usage
+  // priced with the catalog rates (mock but realistic, see lib/config.ts).
+  const model = MODEL_CATALOG.find((m) => m.id === answer?.modelId);
+  const cost =
+    model && answer?.usage
+      ? (answer.usage.inputTokens / 1e6) * model.inputCostPer1M +
+        (answer.usage.outputTokens / 1e6) * model.outputCostPer1M
+      : null;
+
   const meta =
     answer && !answer.error
       ? [
           answer.usage
             ? `${answer.usage.inputTokens} in / ${answer.usage.outputTokens} out tokens`
             : null,
+          cost != null ? `≈ ${usd(cost)}` : null,
           answer.latencyMs != null ? `${(answer.latencyMs / 1000).toFixed(1)}s` : null,
         ]
           .filter(Boolean)
