@@ -18,8 +18,12 @@ export async function POST(req: Request) {
     const algos: string[] = Array.isArray(body.algos) ? body.algos : [];
     const useRecall: boolean = algos.includes("recall");
     const useJudge: boolean = algos.includes("verdict");
+    const judgeModelId: string | undefined =
+      typeof body.judgeModelId === "string" ? body.judgeModelId : undefined;
 
-    const result = await routeWithRecall({ prompt, providerPref, qualityPref, standardId, useRecall, useJudge });
+    const result = await routeWithRecall({
+      prompt, providerPref, qualityPref, standardId, useRecall, useJudge, judgeModelId,
+    });
     return NextResponse.json(result);
   } catch (e) {
     return NextResponse.json(
