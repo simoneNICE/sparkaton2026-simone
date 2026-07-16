@@ -860,8 +860,6 @@ export default function Home() {
               within the same card. */}
           <div style={{ borderTop: "1px solid var(--border)", margin: "24px 0" }} />
 
-          <div style={sectionKicker}>Routing settings</div>
-
           {/* Cost vs quality + baseline — two related dropdowns, side by side. */}
           <div
             style={{
@@ -873,7 +871,7 @@ export default function Home() {
           >
             <div>
               <label htmlFor="cost-quality-select" style={fieldLabel}>
-                Cost vs quality
+                Cost vs quality Setting
               </label>
               <select
                 id="cost-quality-select"
