@@ -162,7 +162,7 @@ export async function routeWithRecall(
   options: RouteOptions & { useRecall?: boolean },
 ): Promise<RouteResult> {
   if (options.useRecall) {
-    const hit = await tryRecall(options.prompt);
+    const hit = tryRecall(options.prompt);
     if (hit) {
       const assessment = assessComplexity(options.prompt);
       const niceDefaultModel =

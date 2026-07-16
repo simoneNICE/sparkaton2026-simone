@@ -1,0 +1,16 @@
+# Normalize line endings. Text files are stored as LF in the repo and checked
+# out as LF on every OS, so Windows editors no longer introduce CRLF noise.
+* text=auto eol=lf
+
+# Shell scripts must stay LF.
+*.sh text eol=lf
+
+# Explicit binaries — never modify.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.woff  binary
+*.woff2 binary
+*.pdf  binary
