@@ -656,7 +656,10 @@ export default function Home() {
     hasResult.current = false; // don't auto re-route on quality/provider change
   }
 
-  async function runRoute(q = qualityPref) {
+  // Returns the fresh routing result on success (so callers can chain the
+  // real-answer run off it without waiting for the result state to flush), or
+  // null on error.
+  async function runRoute(q = qualityPref): Promise<RouteResult | null> {
     setLoading(true);
     setError(null);
     // A new routing decision may pick a different model, so any prior real
@@ -673,8 +676,10 @@ export default function Home() {
       if (!res.ok) throw new Error(data.error || "Request failed");
       setResult(data as RouteResult);
       hasResult.current = true;
+      return data as RouteResult;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error");
+      return null;
     } finally {
       setLoading(false);
     }
@@ -696,11 +701,12 @@ export default function Home() {
     }
   }, [result, error]);
 
-  // Run the real answers on demand (explicit button) so live re-routing on the
-  // slider never triggers paid Bedrock calls. Uses the current routed model and
-  // the NICE Default from the latest routing result.
-  async function fetchAnswers() {
-    if (!result) return;
+  // Run the real answers via Bedrock. Triggered automatically right after an
+  // explicit "Route prompt" click, and by the "Re-run" button — but NEVER on the
+  // live slider/provider re-route, so dragging the slider stays free. Uses the
+  // routed model + NICE Default from the given result (defaults to the latest).
+  async function fetchAnswers(r: RouteResult | null = result) {
+    if (!r) return;
     setAnswersLoading(true);
     setAnswersError(null);
     try {
@@ -709,8 +715,8 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt,
-          selectedModelId: result.selected.model.id,
-          defaultModelId: result.niceDefault.model.id,
+          selectedModelId: r.selected.model.id,
+          defaultModelId: r.niceDefault.model.id,
         }),
       });
       const data = await readJson(res);
@@ -839,10 +845,12 @@ export default function Home() {
                 setPrompt(e.target.value);
                 setExampleLabel(""); // typed prompt no longer matches an example
               }}
-              onKeyDown={(e) => {
+              onKeyDown={async (e) => {
                 if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && prompt.trim() && !loading) {
                   e.preventDefault();
-                  runRoute();
+                  scrollToResultsRef.current = true;
+                  const r = await runRoute();
+                  if (r) fetchAnswers(r);
                 }
               }}
               rows={5}
@@ -1016,9 +1024,12 @@ export default function Home() {
             }}
           >
             <button
-              onClick={() => {
+              onClick={async () => {
                 scrollToResultsRef.current = true;
-                runRoute();
+                // Route, then immediately run both real models off the fresh
+                // result so the user doesn't have to click twice.
+                const r = await runRoute();
+                if (r) fetchAnswers(r);
               }}
               disabled={loading || !prompt.trim()}
               style={{
