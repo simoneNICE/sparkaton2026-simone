@@ -26,7 +26,7 @@ const MAP = {
   "gpt-oss-120b": ["openai.gpt-oss-120b-1:0", false],
   "qwen3-32b":      ["qwen.qwen3-32b-v1:0", false],
   "qwen3-next-80b": ["qwen.qwen3-next-80b-a3b", false],
-  "qwen3-235b":     ["qwen.qwen3-235b-a22b-2507-v1:0", false],
+  "qwen3-235b":     ["qwen.qwen3-vl-235b-a22b", false],
 };
 
 const geo = process.env.BEDROCK_GEO || "us";

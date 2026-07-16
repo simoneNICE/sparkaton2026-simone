@@ -62,7 +62,7 @@ export const BEDROCK_MODEL_MAP: Record<string, BedrockModelMapping> = {
   // --- Alibaba (Qwen3) ---
   "qwen3-32b":      { bedrockId: "qwen.qwen3-32b-v1:0",            crossRegion: false },
   "qwen3-next-80b": { bedrockId: "qwen.qwen3-next-80b-a3b",        crossRegion: false },
-  "qwen3-235b":     { bedrockId: "qwen.qwen3-235b-a22b-2507-v1:0", crossRegion: false },
+  "qwen3-235b":     { bedrockId: "qwen.qwen3-vl-235b-a22b",         crossRegion: false },
 };
 
 // Geo prefix for cross-region inference profiles. Override per deployment region
