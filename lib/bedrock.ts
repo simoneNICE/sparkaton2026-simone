@@ -129,7 +129,21 @@ export interface BedrockInvokeResult {
   latencyMs: number;
 }
 
-const DEFAULTS = { maxTokens: 1024, temperature: 0.3, topP: 0.9 };
+const DEFAULTS = { maxTokens: 1024, temperature: 0.3 };
+
+// Build the Converse inferenceConfig. IMPORTANT: some Bedrock models reject a
+// request that sets BOTH temperature and topP ("`temperature` and `top_p`
+// cannot both be specified for this model"). So we send exactly one sampling
+// knob: topP when the caller explicitly asks for nucleus sampling, otherwise
+// temperature (the default).
+function buildInferenceConfig(req: BedrockInvokeRequest) {
+  const cfg: { maxTokens: number; temperature?: number; topP?: number } = {
+    maxTokens: req.maxTokens ?? DEFAULTS.maxTokens,
+  };
+  if (req.topP != null) cfg.topP = req.topP;
+  else cfg.temperature = req.temperature ?? DEFAULTS.temperature;
+  return cfg;
+}
 
 // ---------------------------------------------------------------------------
 // Invoke — single, non-streaming call via the Converse API.
@@ -147,11 +161,7 @@ export async function invokeBedrock(
     modelId: bedrockModelId,
     messages: [{ role: "user", content: [{ text: req.prompt }] }],
     system: req.system ? [{ text: req.system }] : undefined,
-    inferenceConfig: {
-      maxTokens: req.maxTokens ?? DEFAULTS.maxTokens,
-      temperature: req.temperature ?? DEFAULTS.temperature,
-      topP: req.topP ?? DEFAULTS.topP,
-    },
+    inferenceConfig: buildInferenceConfig(req),
   });
 
   const res = await client.send(command);
@@ -198,11 +208,7 @@ export async function* invokeBedrockStream(
     modelId: bedrockModelId,
     messages: [{ role: "user", content: [{ text: req.prompt }] }],
     system: req.system ? [{ text: req.system }] : undefined,
-    inferenceConfig: {
-      maxTokens: req.maxTokens ?? DEFAULTS.maxTokens,
-      temperature: req.temperature ?? DEFAULTS.temperature,
-      topP: req.topP ?? DEFAULTS.topP,
-    },
+    inferenceConfig: buildInferenceConfig(req),
   });
 
   const res = await client.send(command);
