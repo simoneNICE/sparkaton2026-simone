@@ -68,9 +68,10 @@ export interface ModelCostEstimate {
 }
 
 // How the selected model was decided: "recall" = looked up from a similar
-// past prompt (see lib/recall.ts), "metadata" = computed by the complexity
-// scorer (lib/scoring.ts + lib/router.ts).
-export type RouteSource = "recall" | "metadata";
+// past prompt (see lib/recall.ts), "metadata" = computed by the keyword
+// complexity scorer (lib/scoring.ts + lib/router.ts), "judge" = complexity
+// scored by a cheap LLM up front (see lib/judge.ts), then routed the same way.
+export type RouteSource = "recall" | "metadata" | "judge";
 
 // Present only when source === "recall" — the past prompt this request
 // matched against, and how confident that match was.
@@ -78,6 +79,17 @@ export interface RecallInfo {
   matchedPrompt: string;
   similarityScore: number; // 0..1
   matchType: string; // e.g. "fuzzy_text_match"
+}
+
+// Present only when source === "judge" — the cheap model that scored the
+// prompt's complexity, the score it gave, and why. The score replaces the
+// keyword-heuristic score before value-based selection runs.
+export interface JudgeInfo {
+  modelId: string;
+  modelName: string;
+  score: number; // 0..100, substituted for assessment.score
+  skill: Skill; // dominant skill the judge picked (overrides the keyword one)
+  rationale: string;
 }
 
 export interface RouteResult {
@@ -130,4 +142,5 @@ export interface RouteResult {
   catalog: ModelCostEstimate[];
   source: RouteSource;
   recall?: RecallInfo;
+  judge?: JudgeInfo;
 }

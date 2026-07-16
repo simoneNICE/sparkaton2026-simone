@@ -621,10 +621,10 @@ export default function Home() {
   const [exampleLabel, setExampleLabel] = useState(EXAMPLES[0].label);
   const [standardId, setStandardId] = useState<string>(NICE_DEFAULT_ID);
   const [qualityPref, setQualityPref] = useState(50);
-  // Which routing algorithms are selected. Only "recall" ("Learned") currently
-  // changes behavior: when checked, the router checks the fuzzy-match history
-  // cache before falling back to metadata-based scoring. The others are
-  // still cosmetic placeholders.
+  // Which routing algorithms are selected. "recall" ("Learned") checks the
+  // fuzzy-match history cache first; "verdict" ("Judged") runs a cheap LLM to
+  // score complexity before value-based selection. Precedence: recall hit →
+  // judge → metadata heuristic. "signals"/"tempo" are still cosmetic.
   const [selectedAlgos, setSelectedAlgos] = useState<string[]>(
     ROUTING_ALGORITHMS.filter((x) => x.active).map((x) => x.id),
   );
@@ -656,7 +656,10 @@ export default function Home() {
     hasResult.current = false; // don't auto re-route on quality/provider change
   }
 
-  async function runRoute(q = qualityPref) {
+  // Returns the fresh routing result on success (so callers can chain the
+  // real-answer run off it without waiting for the result state to flush), or
+  // null on error.
+  async function runRoute(q = qualityPref): Promise<RouteResult | null> {
     setLoading(true);
     setError(null);
     // A new routing decision may pick a different model, so any prior real
@@ -673,8 +676,10 @@ export default function Home() {
       if (!res.ok) throw new Error(data.error || "Request failed");
       setResult(data as RouteResult);
       hasResult.current = true;
+      return data as RouteResult;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error");
+      return null;
     } finally {
       setLoading(false);
     }
@@ -696,11 +701,12 @@ export default function Home() {
     }
   }, [result, error]);
 
-  // Run the real answers on demand (explicit button) so live re-routing on the
-  // slider never triggers paid Bedrock calls. Uses the current routed model and
-  // the NICE Default from the latest routing result.
-  async function fetchAnswers() {
-    if (!result) return;
+  // Run the real answers via Bedrock. Triggered automatically right after an
+  // explicit "Route prompt" click, and by the "Re-run" button — but NEVER on the
+  // live slider/provider re-route, so dragging the slider stays free. Uses the
+  // routed model + NICE Default from the given result (defaults to the latest).
+  async function fetchAnswers(r: RouteResult | null = result) {
+    if (!r) return;
     setAnswersLoading(true);
     setAnswersError(null);
     try {
@@ -709,8 +715,8 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt,
-          selectedModelId: result.selected.model.id,
-          defaultModelId: result.niceDefault.model.id,
+          selectedModelId: r.selected.model.id,
+          defaultModelId: r.niceDefault.model.id,
         }),
       });
       const data = await readJson(res);
@@ -839,10 +845,12 @@ export default function Home() {
                 setPrompt(e.target.value);
                 setExampleLabel(""); // typed prompt no longer matches an example
               }}
-              onKeyDown={(e) => {
+              onKeyDown={async (e) => {
                 if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && prompt.trim() && !loading) {
                   e.preventDefault();
-                  runRoute();
+                  scrollToResultsRef.current = true;
+                  const r = await runRoute();
+                  if (r) fetchAnswers(r);
                 }
               }}
               rows={5}
@@ -860,8 +868,6 @@ export default function Home() {
               within the same card. */}
           <div style={{ borderTop: "1px solid var(--border)", margin: "24px 0" }} />
 
-          <div style={sectionKicker}>Routing settings</div>
-
           {/* Cost vs quality + baseline — two related dropdowns, side by side. */}
           <div
             style={{
@@ -873,7 +879,7 @@ export default function Home() {
           >
             <div>
               <label htmlFor="cost-quality-select" style={fieldLabel}>
-                Cost vs quality
+                Cost vs quality Setting
               </label>
               <select
                 id="cost-quality-select"
@@ -1018,9 +1024,12 @@ export default function Home() {
             }}
           >
             <button
-              onClick={() => {
+              onClick={async () => {
                 scrollToResultsRef.current = true;
-                runRoute();
+                // Route, then immediately run both real models off the fresh
+                // result so the user doesn't have to click twice.
+                const r = await runRoute();
+                if (r) fetchAnswers(r);
               }}
               disabled={loading || !prompt.trim()}
               style={{
@@ -1086,8 +1095,26 @@ export default function Home() {
                       </span>
                     </div>
                   ) : (
-                    /* Task affinity — which skill drove the specialist choice */
+                    /* Task affinity — which skill drove the specialist choice.
+                       In "Judged" mode a cheap LLM scored the complexity up
+                       front, so we prepend a badge crediting that verdict. */
                     <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      {result.source === "judge" && result.judge && (
+                        <span
+                          title={`A cheap model (${result.judge.modelName}) scored this prompt's complexity at ${result.judge.score}/100 before routing. ${result.judge.rationale}`}
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: "var(--amber)",
+                            border: "1px solid var(--amber)",
+                            background: "rgba(251,191,36,0.10)",
+                            borderRadius: 999,
+                            padding: "2px 10px",
+                          }}
+                        >
+                          ⚖️ Judged: {result.judge.score}/100 by {result.judge.modelName}
+                        </span>
+                      )}
                       <span
                         title="Dominant task detected from the prompt. Within the chosen tier the router picks the best-value model for this skill."
                         style={{
@@ -1116,7 +1143,7 @@ export default function Home() {
                     {a.estOutputTokens} out tokens
                   </div>
                   <div style={{ marginTop: 4, fontSize: 12, color: "var(--muted)" }}>
-                    raw complexity {a.score} · quality bias {result.qualityBias >= 0 ? "+" : ""}
+                    {result.source === "judge" ? "judged complexity" : "raw complexity"} {a.score} · quality bias {result.qualityBias >= 0 ? "+" : ""}
                     {result.qualityBias} → adjusted {result.adjustedScore}
                   </div>
                 </div>
@@ -1216,8 +1243,37 @@ export default function Home() {
             {/* Explainability breakdown */}
             <section style={{ ...panel, padding: 18 }}>
               <h2 style={{ fontSize: 15, fontWeight: 700, margin: "0 0 12px" }}>
-                Why this score? — feature contributions
+                {result.source === "judge"
+                  ? "Why this score? — judge verdict"
+                  : "Why this score? — feature contributions"}
               </h2>
+              {result.source === "judge" && result.judge && (
+                // In Judged mode the score comes from the LLM, so the keyword
+                // contributions below no longer sum to it — they're shown for
+                // reference. The verdict is the real "why".
+                <div
+                  style={{
+                    marginBottom: 14,
+                    padding: "10px 12px",
+                    borderRadius: 10,
+                    border: "1px solid var(--amber)",
+                    background: "rgba(251,191,36,0.08)",
+                    fontSize: 13,
+                    color: "var(--text)",
+                  }}
+                >
+                  <strong>{result.judge.modelName}</strong> scored complexity{" "}
+                  <strong>{result.judge.score}/100</strong> (task: {result.judge.skill}).
+                  <div style={{ marginTop: 4, color: "var(--muted)" }}>
+                    “{result.judge.rationale}”
+                  </div>
+                </div>
+              )}
+              {result.source === "judge" && (
+                <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
+                  Keyword-heuristic breakdown (for reference — not used to route in Judged mode):
+                </div>
+              )}
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {a.contributions.map((c) => (
                   <ContribRow key={c.key} c={c} />
