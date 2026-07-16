@@ -4,8 +4,10 @@ import {
   qualityBiasFromPref,
 } from "./config";
 import { assessComplexity } from "./scoring";
+import { tierForScore } from "./config";
 import { computeCost, dominantSkill, getNiceDefault, selectByValue } from "./router";
 import { tryRecall } from "./recall";
+import { judgeComplexity } from "./judge";
 import type {
   ComplexityAssessment,
   CostBreakdown,
@@ -38,7 +40,7 @@ function buildResult(
   niceDefaultModel: ModelSpec,
   affinityFloor: number,
   premiumModel: ModelSpec | null,
-): Omit<RouteResult, "source" | "recall"> {
+): Omit<RouteResult, "source" | "recall" | "judge"> {
   const { estInputTokens: inTok, estOutputTokens: outTok } = assessment;
   const effectiveTier = selectedModel.tier;
   const selectedCost = computeCost(selectedModel, inTok, outTok);
@@ -123,9 +125,17 @@ function buildResult(
 // its dominant skill, and the router picks the CHEAPEST model in the whole
 // catalog that clears it. Stronger, pricier models are offered only as an
 // approval-gated premium upgrade — never taken automatically.
-export function route(options: RouteOptions): RouteResult {
-  const { prompt, providerPref = "any", qualityPref = 50, standardId } = options;
-  const assessment = assessComplexity(prompt);
+// Core value-based routing, shared by the metadata and judge paths. Takes an
+// already-computed assessment (so callers can substitute the complexity score —
+// the judge path swaps in an LLM score) and an optional dominant-skill override.
+// The score is the ONLY routing lever here: it sets the affinity floor via
+// adjustedScore; `selectByValue` is identical in both paths.
+function routeFromAssessment(
+  options: RouteOptions,
+  assessment: ComplexityAssessment,
+  skillOverride?: Skill,
+): Omit<RouteResult, "source" | "recall" | "judge"> {
+  const { providerPref = "any", qualityPref = 50, standardId } = options;
 
   // Apply the quality/cost slider as a bias on the complexity score.
   const qualityBias = qualityBiasFromPref(qualityPref);
@@ -135,7 +145,7 @@ export function route(options: RouteOptions): RouteResult {
   const niceDefaultModel =
     MODEL_CATALOG.find((m) => m.id === standardId) ?? getNiceDefault();
 
-  const skill = dominantSkill(assessment);
+  const skill = skillOverride ?? dominantSkill(assessment);
   const affinityFloor = affinityFloorFromScore(adjustedScore);
   const { selected: selectedModel, premium: premiumModel } = selectByValue(
     assessment.estInputTokens,
@@ -145,9 +155,56 @@ export function route(options: RouteOptions): RouteResult {
     providerPref,
   );
 
+  return buildResult(
+    assessment,
+    selectedModel,
+    skill,
+    qualityBias,
+    adjustedScore,
+    niceDefaultModel,
+    affinityFloor,
+    premiumModel,
+  );
+}
+
+export function route(options: RouteOptions): RouteResult {
+  const assessment = assessComplexity(options.prompt);
+  return { ...routeFromAssessment(options, assessment), source: "metadata" };
+}
+
+// Judge-then-route: a cheap LLM scores the prompt's complexity up front, that
+// score is substituted for the keyword-heuristic score, and the SAME value-based
+// selection runs. The judge may also redirect to the right specialist by
+// returning the dominant skill. On any judge failure, degrades gracefully to the
+// ordinary metadata route rather than erroring the request.
+export async function routeWithJudge(options: RouteOptions): Promise<RouteResult> {
+  const assessment = assessComplexity(options.prompt);
+  const verdict = await judgeComplexity(options.prompt);
+
+  if (!verdict) {
+    // Judge unavailable / failed — fall back to the transparent heuristic.
+    return { ...routeFromAssessment(options, assessment), source: "metadata" };
+  }
+
+  // Substitute the judged score (and re-derive the informational rawTier from
+  // it). Everything else on the assessment — token estimates, the keyword
+  // contributions breakdown — is kept for display.
+  const judgedAssessment: ComplexityAssessment = {
+    ...assessment,
+    score: verdict.score,
+    rawTier: tierForScore(verdict.score),
+  };
+
   return {
-    ...buildResult(assessment, selectedModel, skill, qualityBias, adjustedScore, niceDefaultModel, affinityFloor, premiumModel),
-    source: "metadata",
+    ...routeFromAssessment(options, judgedAssessment, verdict.skill),
+    source: "judge",
+    judge: {
+      modelId: verdict.modelId,
+      modelName: verdict.modelName,
+      score: verdict.score,
+      skill: verdict.skill,
+      rationale: verdict.rationale,
+    },
   };
 }
 
@@ -156,10 +213,11 @@ export function route(options: RouteOptions): RouteResult {
 // model is returned immediately, skipping the value-based selector entirely
 // (the complexity assessment is still computed, but only for display — cost
 // estimate, gauge, catalog comparison). No affinity floor or premium upgrade
-// applies to a recalled decision, since it wasn't chosen by score. On a miss,
-// or when recall is disabled, falls through to the ordinary route().
+// applies to a recalled decision, since it wasn't chosen by score. On a miss
+// (or when recall is disabled) it falls through to the judge path if enabled,
+// otherwise the ordinary metadata route(). Precedence: recall → judge → metadata.
 export async function routeWithRecall(
-  options: RouteOptions & { useRecall?: boolean },
+  options: RouteOptions & { useRecall?: boolean; useJudge?: boolean },
 ): Promise<RouteResult> {
   if (options.useRecall) {
     const hit = tryRecall(options.prompt);
@@ -179,6 +237,10 @@ export async function routeWithRecall(
         },
       };
     }
+    // Recall miss — fall through (a judged or metadata decision below).
   }
+  // Judge-then-route: one cheap LLM call scores complexity, then the value
+  // selector runs on that score. Preferred over the pure heuristic when enabled.
+  if (options.useJudge) return routeWithJudge(options);
   return route(options);
 }

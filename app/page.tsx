@@ -621,10 +621,10 @@ export default function Home() {
   const [exampleLabel, setExampleLabel] = useState(EXAMPLES[0].label);
   const [standardId, setStandardId] = useState<string>(NICE_DEFAULT_ID);
   const [qualityPref, setQualityPref] = useState(50);
-  // Which routing algorithms are selected. Only "recall" ("Learned") currently
-  // changes behavior: when checked, the router checks the fuzzy-match history
-  // cache before falling back to metadata-based scoring. The others are
-  // still cosmetic placeholders.
+  // Which routing algorithms are selected. "recall" ("Learned") checks the
+  // fuzzy-match history cache first; "verdict" ("Judged") runs a cheap LLM to
+  // score complexity before value-based selection. Precedence: recall hit →
+  // judge → metadata heuristic. "signals"/"tempo" are still cosmetic.
   const [selectedAlgos, setSelectedAlgos] = useState<string[]>(
     ROUTING_ALGORITHMS.filter((x) => x.active).map((x) => x.id),
   );
@@ -1084,8 +1084,26 @@ export default function Home() {
                       </span>
                     </div>
                   ) : (
-                    /* Task affinity — which skill drove the specialist choice */
+                    /* Task affinity — which skill drove the specialist choice.
+                       In "Judged" mode a cheap LLM scored the complexity up
+                       front, so we prepend a badge crediting that verdict. */
                     <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      {result.source === "judge" && result.judge && (
+                        <span
+                          title={`A cheap model (${result.judge.modelName}) scored this prompt's complexity at ${result.judge.score}/100 before routing. ${result.judge.rationale}`}
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: "var(--amber)",
+                            border: "1px solid var(--amber)",
+                            background: "rgba(251,191,36,0.10)",
+                            borderRadius: 999,
+                            padding: "2px 10px",
+                          }}
+                        >
+                          ⚖️ Judged: {result.judge.score}/100 by {result.judge.modelName}
+                        </span>
+                      )}
                       <span
                         title="Dominant task detected from the prompt. Within the chosen tier the router picks the best-value model for this skill."
                         style={{
@@ -1114,7 +1132,7 @@ export default function Home() {
                     {a.estOutputTokens} out tokens
                   </div>
                   <div style={{ marginTop: 4, fontSize: 12, color: "var(--muted)" }}>
-                    raw complexity {a.score} · quality bias {result.qualityBias >= 0 ? "+" : ""}
+                    {result.source === "judge" ? "judged complexity" : "raw complexity"} {a.score} · quality bias {result.qualityBias >= 0 ? "+" : ""}
                     {result.qualityBias} → adjusted {result.adjustedScore}
                   </div>
                 </div>
@@ -1214,8 +1232,37 @@ export default function Home() {
             {/* Explainability breakdown */}
             <section style={{ ...panel, padding: 18 }}>
               <h2 style={{ fontSize: 15, fontWeight: 700, margin: "0 0 12px" }}>
-                Why this score? — feature contributions
+                {result.source === "judge"
+                  ? "Why this score? — judge verdict"
+                  : "Why this score? — feature contributions"}
               </h2>
+              {result.source === "judge" && result.judge && (
+                // In Judged mode the score comes from the LLM, so the keyword
+                // contributions below no longer sum to it — they're shown for
+                // reference. The verdict is the real "why".
+                <div
+                  style={{
+                    marginBottom: 14,
+                    padding: "10px 12px",
+                    borderRadius: 10,
+                    border: "1px solid var(--amber)",
+                    background: "rgba(251,191,36,0.08)",
+                    fontSize: 13,
+                    color: "var(--text)",
+                  }}
+                >
+                  <strong>{result.judge.modelName}</strong> scored complexity{" "}
+                  <strong>{result.judge.score}/100</strong> (task: {result.judge.skill}).
+                  <div style={{ marginTop: 4, color: "var(--muted)" }}>
+                    “{result.judge.rationale}”
+                  </div>
+                </div>
+              )}
+              {result.source === "judge" && (
+                <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
+                  Keyword-heuristic breakdown (for reference — not used to route in Judged mode):
+                </div>
+              )}
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {a.contributions.map((c) => (
                   <ContribRow key={c.key} c={c} />
