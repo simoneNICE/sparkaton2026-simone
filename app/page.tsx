@@ -519,6 +519,26 @@ const SKILL_META: Record<SkillKey, { label: string; icon: string }> = {
   general: { label: "General", icon: "💬" },
 };
 
+// Simple clock icon — marks models priced at the flex ("Timing") rate.
+function ClockIcon({ size = 12 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
 // Small inline capability bar (0..1) — visualizes a model's affinity on a skill.
 function CapBar({ value, highlight }: { value: number; highlight?: boolean }) {
   return (
@@ -732,6 +752,9 @@ export default function Home() {
   const a = result?.assessment;
   const sv = result?.savingsVsDefault;
   const qv = result?.qualityVsDefault;
+  // "Timing" (tempo) enabled -> flex-capable models are priced at the 50% flex
+  // discount, so the comparison table flags which rows got it.
+  const timingOn = selectedAlgos.includes("tempo");
 
   return (
     <>
@@ -1187,6 +1210,7 @@ export default function Home() {
                         Skill fit ({SKILL_META[result.dominantSkill as SkillKey].label})
                       </th>
                       <th style={{ ...th, textAlign: "right" }}>Est. cost / call</th>
+                      <th style={th}></th>
                       <th style={{ ...th, textAlign: "right" }}>vs Default</th>
                       <th style={th}></th>
                     </tr>
@@ -1215,8 +1239,30 @@ export default function Home() {
                               highlight={c.isSelected}
                             />
                           </td>
-                          <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                          <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
                             {usd(c.cost.totalCost)}
+                          </td>
+                          <td style={{ ...td, whiteSpace: "nowrap", width: "1%" }}>
+                            {timingOn && c.model.flex && (
+                              <span
+                                title="Flex pricing: 50% discount for latency headroom (Timing enabled)"
+                                style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 4,
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  color: "var(--green)",
+                                  border: "1px solid var(--green)",
+                                  background: "rgba(52,211,153,0.10)",
+                                  borderRadius: 999,
+                                  padding: "1px 6px",
+                                }}
+                              >
+                                <ClockIcon size={11} />
+                                FLEX −50%
+                              </span>
+                            )}
                           </td>
                           <td
                             style={{

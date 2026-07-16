@@ -25,6 +25,8 @@ export interface RouteOptions {
   // The NICE standard: the model NICE would use by default, i.e. the savings
   // baseline every routed choice is compared against. Defaults to NICE_DEFAULT_ID.
   standardId?: string;
+  // "Timing" enabled: price flex-capable models at their discounted flex rate.
+  flex?: boolean;
 }
 
 // Shared machinery: given a chosen model + assessment, build the cost
@@ -40,11 +42,12 @@ function buildResult(
   niceDefaultModel: ModelSpec,
   affinityFloor: number,
   premiumModel: ModelSpec | null,
+  flex: boolean,
 ): Omit<RouteResult, "source" | "recall" | "judge"> {
   const { estInputTokens: inTok, estOutputTokens: outTok } = assessment;
   const effectiveTier = selectedModel.tier;
-  const selectedCost = computeCost(selectedModel, inTok, outTok);
-  const defaultCost = computeCost(niceDefaultModel, inTok, outTok);
+  const selectedCost = computeCost(selectedModel, inTok, outTok, flex);
+  const defaultCost = computeCost(niceDefaultModel, inTok, outTok, flex);
 
   // Savings of any cost vs the NICE Default. Positive = cheaper than the Default.
   // Single source of truth so the UI never re-derives this arithmetic.
@@ -76,7 +79,7 @@ function buildResult(
   // floor, so there's no "next tier up" to offer.
   const premiumOption = premiumModel
     ? (() => {
-        const cost = computeCost(premiumModel, inTok, outTok);
+        const cost = computeCost(premiumModel, inTok, outTok, flex);
         const premCap = premiumModel.capabilities[skill];
         return {
           model: premiumModel,
@@ -94,7 +97,7 @@ function buildResult(
 
   // Full catalog priced for this request (for the comparison table).
   const catalog: ModelCostEstimate[] = MODEL_CATALOG.map((m) => {
-    const cost = computeCost(m, inTok, outTok);
+    const cost = computeCost(m, inTok, outTok, flex);
     return {
       model: m,
       cost,
@@ -120,22 +123,18 @@ function buildResult(
   };
 }
 
-// Pure metadata-based routing decision — no LLM call, no cache lookup.
-// Value-based (cost-first): the task's complexity sets an affinity floor on
-// its dominant skill, and the router picks the CHEAPEST model in the whole
-// catalog that clears it. Stronger, pricier models are offered only as an
-// approval-gated premium upgrade — never taken automatically.
-// Core value-based routing, shared by the metadata and judge paths. Takes an
-// already-computed assessment (so callers can substitute the complexity score —
-// the judge path swaps in an LLM score) and an optional dominant-skill override.
-// The score is the ONLY routing lever here: it sets the affinity floor via
-// adjustedScore; `selectByValue` is identical in both paths.
+// Value-based (cost-first) routing shared by the metadata and judge paths.
+// Takes an already-computed assessment (so callers can substitute the complexity
+// score — the judge path swaps in an LLM score) and an optional dominant-skill
+// override. The score is the ONLY routing lever here: it sets the affinity floor
+// via adjustedScore; `selectByValue` is identical in both paths. When `flex` is
+// set, flex-capable models are priced at their discounted flex rate.
 function routeFromAssessment(
   options: RouteOptions,
   assessment: ComplexityAssessment,
   skillOverride?: Skill,
 ): Omit<RouteResult, "source" | "recall" | "judge"> {
-  const { providerPref = "any", qualityPref = 50, standardId } = options;
+  const { providerPref = "any", qualityPref = 50, standardId, flex = false } = options;
 
   // Apply the quality/cost slider as a bias on the complexity score.
   const qualityBias = qualityBiasFromPref(qualityPref);
@@ -153,6 +152,7 @@ function routeFromAssessment(
     skill,
     affinityFloor,
     providerPref,
+    flex,
   );
 
   return buildResult(
@@ -164,6 +164,7 @@ function routeFromAssessment(
     niceDefaultModel,
     affinityFloor,
     premiumModel,
+    flex,
   );
 }
 
@@ -228,7 +229,7 @@ export async function routeWithRecall(
       const skill = dominantSkill(assessment);
 
       return {
-        ...buildResult(assessment, hit.model, skill, 0, assessment.score, niceDefaultModel, 0, null),
+        ...buildResult(assessment, hit.model, skill, 0, assessment.score, niceDefaultModel, 0, null, options.flex ?? false),
         source: "recall",
         recall: {
           matchedPrompt: hit.matchedPrompt,

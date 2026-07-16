@@ -13,13 +13,15 @@ export async function POST(req: Request) {
     const qualityPref: number = typeof body.qualityPref === "number" ? body.qualityPref : 50;
     const standardId: string | undefined =
       typeof body.standardId === "string" ? body.standardId : undefined;
-    // "recall" is the id of the "Learned" routing algorithm toggle in the UI;
-    // "verdict" is the "Judged" (judge-then-route) toggle.
+    // Routing algorithm toggles from the UI: "recall" = "Learned",
+    // "verdict" = "Judged" (judge-then-route), "tempo" = "Timing" (when on,
+    // flex-capable models are priced at their discounted flex rate).
     const algos: string[] = Array.isArray(body.algos) ? body.algos : [];
     const useRecall: boolean = algos.includes("recall");
     const useJudge: boolean = algos.includes("verdict");
+    const flex: boolean = algos.includes("tempo");
 
-    const result = await routeWithRecall({ prompt, providerPref, qualityPref, standardId, useRecall, useJudge });
+    const result = await routeWithRecall({ prompt, providerPref, qualityPref, standardId, useRecall, useJudge, flex });
     return NextResponse.json(result);
   } catch (e) {
     return NextResponse.json(

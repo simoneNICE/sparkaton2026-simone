@@ -1,4 +1,5 @@
 import {
+  FLEX_DISCOUNT,
   MODEL_CATALOG,
   NICE_DEFAULT_ID,
   PREMIUM_MIN_CAP_GAIN,
@@ -17,9 +18,12 @@ export function computeCost(
   model: ModelSpec,
   inputTokens: number,
   outputTokens: number,
+  // When true, apply the flex ("Timing") discount to models that offer it.
+  flex = false,
 ): CostBreakdown {
-  const inputCost = (inputTokens / 1_000_000) * model.inputCostPer1M;
-  const outputCost = (outputTokens / 1_000_000) * model.outputCostPer1M;
+  const mult = flex && model.flex ? FLEX_DISCOUNT : 1;
+  const inputCost = (inputTokens / 1_000_000) * model.inputCostPer1M * mult;
+  const outputCost = (outputTokens / 1_000_000) * model.outputCostPer1M * mult;
   return {
     inputTokens,
     outputTokens,
@@ -70,6 +74,7 @@ export function selectModel(
   skill: Skill,
   tolerance: number,
   providerPref?: Provider | "any",
+  flex = false,
 ): ModelSpec {
   let pool = MODEL_CATALOG.filter((m) => m.tier === tier);
   if (providerPref && providerPref !== "any") {
@@ -80,7 +85,7 @@ export function selectModel(
   if (!pool.length) return getNiceDefault();
 
   const cap = (m: ModelSpec) => m.capabilities[skill];
-  const price = (m: ModelSpec) => computeCost(m, inputTokens, outputTokens).totalCost;
+  const price = (m: ModelSpec) => computeCost(m, inputTokens, outputTokens, flex).totalCost;
 
   if (tier >= TOP_TIER) {
     // Quality-first: best on the needed skill, tie-broken by most capable overall.
@@ -106,6 +111,9 @@ export function selectByValue(
   skill: Skill,
   floor: number,
   providerPref?: Provider | "any",
+  // When true, flex-capable models are priced at the discount, so the cost-first
+  // pick reflects the cheaper flex rate (a flex model may now win on price).
+  flex = false,
 ): { selected: ModelSpec; premium: ModelSpec | null } {
   let pool = MODEL_CATALOG;
   if (providerPref && providerPref !== "any") {
@@ -114,7 +122,7 @@ export function selectByValue(
   }
 
   const cap = (m: ModelSpec) => m.capabilities[skill];
-  const price = (m: ModelSpec) => computeCost(m, inputTokens, outputTokens).totalCost;
+  const price = (m: ModelSpec) => computeCost(m, inputTokens, outputTokens, flex).totalCost;
 
   // Models that clear the quality floor for this task. If none do (floor above
   // every model), fall back to the most capable model(s) available.
