@@ -63,13 +63,34 @@ npm run dev
 app/
   page.tsx            UI (input, slider, decision, comparison table, breakdown)
   api/route/route.ts  routing endpoint
+  api/match/route.ts  standalone fuzzy-matcher endpoint (GET /api/match?query=...)
 lib/
   config.ts           model catalog, weights, thresholds, quality-bias
   scoring.ts          feature extraction + complexity score
   router.ts           tier -> model selection + cost
   orchestrate.ts      end-to-end routing decision (no LLM call)
+  matcher.ts          deterministic fuzzy prompt matcher (no AI) — the "Learned" engine
+  matcher-db.json     stored prompt -> associated model database
+  recall.ts           "Learned" recall routing — in-process wrapper over matcher.ts
   types.ts            shared types
 ```
+
+## "Learned" routing (recall)
+
+The **Learned** routing algorithm ([`lib/matcher.ts`](lib/matcher.ts)) matches a
+prompt against a stored database of previously-routed prompts
+([`lib/matcher-db.json`](lib/matcher-db.json)) using **classical, deterministic
+string-similarity** only — Levenshtein + token-overlap + trigram-cosine +
+sequence ratio, weighted `0.35 / 0.30 / 0.25 / 0.10`. No embeddings, no vector
+search, no LLM. On a confident match (score ≥ 0.75) it returns the
+`associated_model` stored next to that prompt **verbatim** — nothing is
+generated. This is a TypeScript port of a former standalone Python/Flask
+service, now running **in-process** (no external service, no network hop).
+
+- In routing: enable the "Learned" checkbox; [`lib/recall.ts`](lib/recall.ts)
+  checks the matcher before falling back to the metadata scorer.
+- Standalone: `GET /api/match?query=...` (add `&debug=1` for the component
+  breakdown) returns the same JSON shape the old Flask service did.
 
 ## Configuration
 

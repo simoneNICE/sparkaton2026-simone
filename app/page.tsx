@@ -4,6 +4,21 @@ import { useEffect, useRef, useState } from "react";
 import type { RouteResult } from "@/lib/types";
 import { MODEL_CATALOG, NICE_DEFAULT_ID } from "@/lib/config";
 
+// Shape returned by /api/answer — one real Bedrock answer per model, with a
+// per-model error field so one failure never blanks the other column.
+interface OneAnswer {
+  modelId: string;
+  text?: string;
+  usage?: { inputTokens: number; outputTokens: number; totalTokens: number };
+  latencyMs?: number;
+  bedrockModelId?: string;
+  error?: string;
+}
+interface AnswersResult {
+  selected: OneAnswer;
+  niceDefault: OneAnswer;
+}
+
 // Sentinel shown in the dropdown when the user has typed a custom prompt that
 // doesn't match any example.
 const CUSTOM_LABEL = "✎ Custom prompt";
@@ -500,8 +515,30 @@ function CapBar({ value, highlight }: { value: number; highlight?: boolean }) {
 
 function usd(n: number): string {
   if (n === 0) return "$0";
-  if (Math.abs(n) < 0.01) return `$${n.toFixed(5)}`;
-  return `$${n.toFixed(4)}`;
+  const a = Math.abs(n);
+  if (a >= 0.01) return `$${n.toFixed(4)}`;
+  // Sub-cent values (a single cheap call, e.g. Gemma 3 4B) would round to
+  // $0.00000 at a fixed 5 decimals. Scale precision to the magnitude so the
+  // figure stays visible, capped at 10 decimals.
+  const digits = Math.min(10, Math.max(5, Math.ceil(-Math.log10(a)) + 2));
+  return `$${n.toFixed(digits)}`;
+}
+
+// Parse a fetch response as JSON, but fail with a readable message when the
+// server returns HTML instead (e.g. an AWS WAF block page). Without this the
+// browser throws the cryptic "Unexpected token '<' … is not valid JSON".
+async function readJson(res: Response) {
+  const contentType = res.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) {
+    await res.text().catch(() => "");
+    if (res.status === 403) {
+      throw new Error(
+        "Request blocked (HTTP 403) — likely the AWS WAF firewall. A large prompt can exceed the 8 KB body limit (SizeRestrictions_BODY rule).",
+      );
+    }
+    throw new Error(`Unexpected ${res.status} response (not JSON).`);
+  }
+  return res.json();
 }
 
 const panel: React.CSSProperties = {
@@ -526,6 +563,10 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<RouteResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Real-answer feature: run the routed model + NICE Default via Bedrock.
+  const [answers, setAnswers] = useState<AnswersResult | null>(null);
+  const [answersLoading, setAnswersLoading] = useState(false);
+  const [answersError, setAnswersError] = useState<string | null>(null);
   const hasResult = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -538,19 +579,25 @@ export default function Home() {
     setExampleLabel(label);
     setResult(null);
     setError(null);
+    setAnswers(null);
+    setAnswersError(null);
     hasResult.current = false; // don't auto re-route on quality/provider change
   }
 
   async function runRoute(q = qualityPref) {
     setLoading(true);
     setError(null);
+    // A new routing decision may pick a different model, so any prior real
+    // answers no longer match — clear them.
+    setAnswers(null);
+    setAnswersError(null);
     try {
       const res = await fetch("/api/route", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt, standardId, qualityPref: q, algos: selectedAlgos }),
       });
-      const data = await res.json();
+      const data = await readJson(res);
       if (!res.ok) throw new Error(data.error || "Request failed");
       setResult(data as RouteResult);
       hasResult.current = true;
@@ -567,6 +614,33 @@ export default function Home() {
     if (hasResult.current) runRoute();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qualityPref, standardId, selectedAlgos]);
+
+  // Run the real answers on demand (explicit button) so live re-routing on the
+  // slider never triggers paid Bedrock calls. Uses the current routed model and
+  // the NICE Default from the latest routing result.
+  async function fetchAnswers() {
+    if (!result) return;
+    setAnswersLoading(true);
+    setAnswersError(null);
+    try {
+      const res = await fetch("/api/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt,
+          selectedModelId: result.selected.model.id,
+          defaultModelId: result.niceDefault.model.id,
+        }),
+      });
+      const data = await readJson(res);
+      if (!res.ok) throw new Error(data.error || "Request failed");
+      setAnswers(data as AnswersResult);
+    } catch (e) {
+      setAnswersError(e instanceof Error ? e.message : "Error");
+    } finally {
+      setAnswersLoading(false);
+    }
+  }
 
   const a = result?.assessment;
   const sv = result?.savingsVsDefault;
@@ -873,36 +947,6 @@ export default function Home() {
               </select>
             </label>
 
-            {/* Coming soon — future optional real answer via Claude CLI */}
-            <label
-              title="Coming soon"
-              style={{
-                fontSize: 13,
-                color: "var(--muted)",
-                display: "flex",
-                gap: 6,
-                alignItems: "center",
-                opacity: 0.55,
-                cursor: "not-allowed",
-              }}
-            >
-              <input type="checkbox" disabled />
-              Run real answer via Claude CLI
-              <span
-                style={{
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: 0.5,
-                  color: "var(--accent)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 999,
-                  padding: "1px 7px",
-                }}
-              >
-                COMING SOON
-              </span>
-            </label>
-
             <button
               onClick={() => runRoute()}
               disabled={loading || !prompt.trim()}
@@ -1107,25 +1151,86 @@ export default function Home() {
               </div>
             </section>
 
-            {/* Real answer — coming soon placeholder */}
-            <section
-              style={{
-                ...panel,
-                padding: 22,
-                borderStyle: "dashed",
-                textAlign: "center",
-                color: "var(--muted)",
-              }}
-            >
-              <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>
-                Real model answer — coming soon
-              </div>
-              <p style={{ fontSize: 13, margin: "8px auto 0", maxWidth: 560 }}>
-                Next step: an optional switch to actually run the selected model (and the NICE
-                Default for comparison) via the local Claude CLI, to verify the choice was good
-                enough. The routing decision above is already final and real.
-              </p>
-            </section>
+            {/* Real model answers — routed model vs NICE Default, via Bedrock */}
+            <section style={{ ...panel, padding: 18 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    flexWrap: "wrap",
+                    marginBottom: 14,
+                  }}
+                >
+                  <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)" }}>
+                    Real model answers
+                  </div>
+                  <div style={{ fontSize: 13, color: "var(--muted)" }}>
+                    Runs both models on Bedrock to verify the routed choice was good enough.
+                  </div>
+                  <button
+                    onClick={() => fetchAnswers()}
+                    disabled={answersLoading}
+                    style={{
+                      marginLeft: "auto",
+                      background: "var(--accent)",
+                      color: "#ffffff",
+                      fontWeight: 700,
+                      border: "none",
+                      borderRadius: 10,
+                      padding: "8px 16px",
+                      cursor: answersLoading ? "default" : "pointer",
+                      opacity: answersLoading ? 0.6 : 1,
+                    }}
+                  >
+                    {answersLoading ? "Running…" : answers ? "Re-run" : "Run both models"}
+                  </button>
+                </div>
+
+                {answersError && (
+                  <div
+                    style={{
+                      ...panel,
+                      padding: 12,
+                      borderColor: "var(--red)",
+                      color: "var(--red)",
+                      marginBottom: 12,
+                    }}
+                  >
+                    {answersError}
+                  </div>
+                )}
+
+                {result.selected.model.id === result.niceDefault.model.id && (
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
+                    The router landed on the NICE Default for this prompt, so both columns run the
+                    same model.
+                  </div>
+                )}
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                    gap: 14,
+                  }}
+                >
+                  <AnswerColumn
+                    title={result.selected.model.displayName}
+                    badge="ROUTED CHOICE"
+                    badgeColor="var(--accent)"
+                    answer={answers?.selected}
+                    loading={answersLoading}
+                  />
+                  <AnswerColumn
+                    title={result.niceDefault.model.displayName}
+                    badge="NICE DEFAULT"
+                    badgeColor="var(--amber)"
+                    answer={answers?.niceDefault}
+                    loading={answersLoading}
+                  />
+                </div>
+              </section>
           </>
         )}
       </div>
@@ -1136,6 +1241,71 @@ export default function Home() {
 
 const th: React.CSSProperties = { padding: "6px 10px", fontWeight: 600, fontSize: 12 };
 const td: React.CSSProperties = { padding: "9px 10px" };
+
+function AnswerColumn({
+  title,
+  badge,
+  badgeColor,
+  answer,
+  loading,
+}: {
+  title: string;
+  badge: string;
+  badgeColor: string;
+  answer?: OneAnswer;
+  loading: boolean;
+}) {
+  // Approximate cost of this real answer, from the actual Bedrock token usage
+  // priced with the catalog rates (mock but realistic, see lib/config.ts).
+  const model = MODEL_CATALOG.find((m) => m.id === answer?.modelId);
+  const cost =
+    model && answer?.usage
+      ? (answer.usage.inputTokens / 1e6) * model.inputCostPer1M +
+        (answer.usage.outputTokens / 1e6) * model.outputCostPer1M
+      : null;
+
+  const meta =
+    answer && !answer.error
+      ? [
+          answer.usage
+            ? `${answer.usage.inputTokens} in / ${answer.usage.outputTokens} out tokens`
+            : null,
+          cost != null ? `≈ ${usd(cost)}` : null,
+          answer.latencyMs != null ? `${(answer.latencyMs / 1000).toFixed(1)}s` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : "";
+
+  return (
+    <div style={{ ...panel, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{title}</span>
+        <Chip color={badgeColor}>{badge}</Chip>
+      </div>
+
+      {meta && <div style={{ fontSize: 12, color: "var(--muted)" }}>{meta}</div>}
+
+      <div
+        style={{
+          fontSize: 13,
+          lineHeight: 1.5,
+          whiteSpace: "pre-wrap",
+          color: answer?.error ? "var(--red)" : "var(--text)",
+          minHeight: 40,
+        }}
+      >
+        {loading
+          ? "Running…"
+          : answer?.error
+            ? answer.error
+            : answer?.text
+              ? answer.text
+              : "Not run yet."}
+      </div>
+    </div>
+  );
+}
 
 function Chip({ children, color }: { children: React.ReactNode; color: string }) {
   return (

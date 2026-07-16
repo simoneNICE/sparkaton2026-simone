@@ -1,0 +1,50 @@
+{
+  "description": "Prompt -> associated model database. The associated_model is a stored fact, retrieved verbatim on a fuzzy text match, never generated.",
+  "entries": [
+    { "id": 1, "prompt": "Summarize this article for executives.", "associated_model": "gpt-oss-120b" },
+    { "id": 2, "prompt": "Extract key insights from a customer support conversation.", "associated_model": "claude-sonnet-4.5" },
+    { "id": 3, "prompt": "Generate Python unit tests.", "associated_model": "gemma-3-27b" },
+    { "id": 4, "prompt": "Translate this text from English to French.", "associated_model": "gpt-oss-120b" },
+    { "id": 5, "prompt": "Write a SQL query to find the top 10 customers by revenue.", "associated_model": "gemma-3-27b" },
+    { "id": 6, "prompt": "Draft a polite reply to a customer complaint email.", "associated_model": "claude-sonnet-4.5" },
+    { "id": 7, "prompt": "Classify the sentiment of these product reviews.", "associated_model": "claude-sonnet-4.5" },
+    { "id": 8, "prompt": "Explain this legal contract clause in plain language.", "associated_model": "claude-sonnet-4.5" },
+    { "id": 9, "prompt": "Refactor this JavaScript function to be more readable.", "associated_model": "gemma-3-27b" },
+    { "id": 10, "prompt": "Create a marketing tagline for a new coffee brand.", "associated_model": "gpt-oss-120b" },
+    {
+      "id": 11,
+      "name": "EnrichmentService-ResponseSimilarity",
+      "version": "1.0",
+      "prompt": "You are a response similarity analyzer for customer service interactions. Your task is to calculate the semantic similarity between a knowledge base answer and an actual agent response.\n\nRULE: Respond with only the numerical score (0.0-1.0). No explanations, no additional text.\n\nScoring Guidelines:\n- 0.9-1.0: Nearly identical meaning and content, agent followed KB guidance perfectly\n- 0.7-0.89: Very similar core meaning with minor differences in wording\n- 0.5-0.69: Similar information provided but notable differences in detail or approach\n- 0.3-0.49: Some correct information but significant deviations from KB guidance\n- 0.1-0.29: Minimal alignment with KB answer, mostly different information\n- 0.0-0.09: No meaningful similarity, agent response unrelated to KB guidance\n\nExamples:\n\nExample 1 with expected score 0.85:\nKB ANSWER: \"Our return policy allows returns within 30 days of purchase with original receipt. Items must be in original condition.\"\nAGENT RESPONSE: \"You can return the item within a month if you have the receipt and it's unused.\"\n\nExample 2 with expected score 0.3:\nKB ANSWER: \"Our return policy allows returns within 30 days of purchase with original receipt.\"\nAGENT RESPONSE: \"Let me check with my supervisor about returns. I think we might be able to help but I'm not sure about the timeframe.\"\n\nAnalyze these texts:\n\nKNOWLEDGE BASE ANSWER: '{{kb_answer}}'\n\nACTUAL AGENT RESPONSE: '{{agent_response}}'",
+      "associated_model": "nova-lite"
+    },
+    {
+      "id": 12,
+      "name": "EnrichmentService-SummarizeAgentAnswers",
+      "version": "2.2",
+      "prompt": "Here is a part of a transcript of a call to a contact center\n<transcript>\n{{transcript}}\n</transcript>\nUser question: <question>{{question}}</question>\nExecute the instructions:\n<instructions>\n1. Summarize the actual response the agent gave to the user's question, based strictly on the transcript. Capture the concrete outcome and the specific details the agent provided - such as exact prices and amounts, confirmation of any action the agent took, timeframes or deadlines, and the specific steps, payment, or process instructions given.\n2. Base your answer only on what the agent actually said in the transcript. Do not generalize into a hypothetical or generic answer, and do not omit the specific details (prices, amounts, deadlines, actions taken, instructions). Do not invent any detail that is not present in the transcript.\n3. Do not include any preamble, introductory phrases, or statements about the transcript provided. Start your answer immediately.\n4. CRITICAL: Answer in {{language}} language ONLY. Do not use any other language regardless of the input transcript language.\n5. Your entire response must be written in {{language}} language. This is mandatory.\n6. Keep your response within {{words_count}} words.\n</instructions>",
+      "associated_model": "nova-lite"
+    },
+    {
+      "id": 13,
+      "name": "EnrichmentService-PickIntents",
+      "version": "3.1",
+      "prompt": "Your input is a summary of a conversation between a customer and a support agent and a list of possible conversation intents <{{items_list}}>. Determine which intent from the list is the most relevant to this conversation summary <{{final_summary}}> or if non seem to be a good fit return value [\"Undetermined\"]. Do not return any other value ! Only reply in the format of a single [\"intent\"] and nothing else.",
+      "associated_model": "nova-lite"
+    },
+    {
+      "id": 14,
+      "name": "EnrichmentService-PickCategories",
+      "version": "3.1",
+      "prompt": "Your input is question a customer asks of a support agent and a list of possible categories <{{items_list}}>. Determine which category from the list is the most relevant to the <{{customer_query}}> or if non seem to be a good fit return value [\"Uncategorized\"]. Do not return any other value ! Reply in the format of only that [\"category\"] and nothing else.",
+      "associated_model": "nova-lite"
+    },
+    {
+      "id": 15,
+      "name": "EnrichmentService-AutoSummary",
+      "version": "2.0",
+      "prompt": "You are a text similarity analyzer. Your task is to calculate the semantic similarity between two customer service call summaries.\nRULE: Respond with only the numerical score (0-100). No explanations, no additional text.\n\nScoring Guidelines:\n- 90-100: Nearly identical meaning and content\n- 70-89: Very similar core meaning with minor differences\n- 50-69: Similar topics but notable content differences\n- 30-49: Some shared topics but different focus\n- 10-29: Minimal semantic overlap\n- 0-9: No meaningful similarity\n\nSummaries to analyze:\n\nTEXT 1: '{{suggested}}'\n\nTEXT 2: '{{actual}}'",
+      "associated_model": "nova-lite"
+    }
+  ]
+}
