@@ -22,6 +22,11 @@ export interface ModelSpec {
   inputCostPer1M: number;
   outputCostPer1M: number;
   capabilities: ModelCapabilities;
+  // Whether this model offers a "flex" pricing tier — a ~50% discount in
+  // exchange for latency headroom. Only set for models that actually list a
+  // flex option. When the "Timing" routing option is on, flex-capable models
+  // are priced at the discount (see FLEX_DISCOUNT / computeCost).
+  flex?: boolean;
 }
 
 // A single scoring dimension and how much it contributed to the final score.
