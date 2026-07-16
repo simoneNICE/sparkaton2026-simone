@@ -25,6 +25,9 @@ export interface RouteOptions {
   // The NICE standard: the model NICE would use by default, i.e. the savings
   // baseline every routed choice is compared against. Defaults to NICE_DEFAULT_ID.
   standardId?: string;
+  // For the "Judged" path: which cheap model scores complexity. Ignored unless
+  // it's a cheap (tier-1) Bedrock-supported id; otherwise the judge default wins.
+  judgeModelId?: string;
 }
 
 // Shared machinery: given a chosen model + assessment, build the cost
@@ -179,7 +182,7 @@ export function route(options: RouteOptions): RouteResult {
 // ordinary metadata route rather than erroring the request.
 export async function routeWithJudge(options: RouteOptions): Promise<RouteResult> {
   const assessment = assessComplexity(options.prompt);
-  const verdict = await judgeComplexity(options.prompt);
+  const verdict = await judgeComplexity(options.prompt, options.judgeModelId);
 
   if (!verdict) {
     // Judge unavailable / failed — fall back to the transparent heuristic.

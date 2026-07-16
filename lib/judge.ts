@@ -14,13 +14,24 @@
 // cached verdict instead of firing a fresh (paid) Bedrock call on every drag.
 // ---------------------------------------------------------------------------
 
-import { MODEL_CATALOG } from "./config";
+import { MODEL_CATALOG, cheapModelIds } from "./config";
 import { invokeBedrock, isBedrockSupported } from "./bedrock";
 import type { Skill } from "./types";
 
-// The model that does the judging. Cheap by design; override per deployment.
-// Defaults to Nova Micro (the cheapest catalog model). Any catalog id works.
-const JUDGE_MODEL_ID = process.env.JUDGE_MODEL_ID?.trim() || "nova-micro";
+// The default model that does the judging when the caller doesn't pick one.
+// Cheap by design; override per deployment. Nova Micro is a good default.
+const DEFAULT_JUDGE_MODEL_ID = process.env.JUDGE_MODEL_ID?.trim() || "nova-micro";
+
+// Resolve the judge model: honor a caller-requested id only if it's a cheap
+// (tier-1) Bedrock-supported model — so a client can never make us judge with an
+// expensive model — otherwise fall back to the default.
+function resolveJudgeModel(requestedId?: string): string | null {
+  const cheap = cheapModelIds();
+  if (requestedId && cheap.includes(requestedId) && isBedrockSupported(requestedId)) {
+    return requestedId;
+  }
+  return isBedrockSupported(DEFAULT_JUDGE_MODEL_ID) ? DEFAULT_JUDGE_MODEL_ID : null;
+}
 
 export interface JudgeVerdict {
   // Complexity 0..100, on the same scale as assessComplexity().score.
@@ -97,19 +108,24 @@ function cacheSet(key: string, value: JudgeVerdict): void {
 // failure (unsupported judge model, missing credentials, bad JSON, empty
 // response) so the caller can fall back to the keyword heuristic — a judge
 // failure must degrade the request, never break it.
-export async function judgeComplexity(prompt: string): Promise<JudgeVerdict | null> {
+export async function judgeComplexity(
+  prompt: string,
+  requestedModelId?: string,
+): Promise<JudgeVerdict | null> {
   const trimmed = prompt.trim();
   if (!trimmed) return null;
-  if (!isBedrockSupported(JUDGE_MODEL_ID)) return null;
 
-  const key = `${JUDGE_MODEL_ID}::${trimmed}`;
+  const judgeId = resolveJudgeModel(requestedModelId);
+  if (!judgeId) return null;
+
+  const key = `${judgeId}::${trimmed}`;
   const cached = cacheGet(key);
   if (cached) return cached;
 
   let text: string;
   try {
     const res = await invokeBedrock({
-      modelId: JUDGE_MODEL_ID,
+      modelId: judgeId,
       prompt: trimmed,
       system: SYSTEM_PROMPT,
       maxTokens: 120,
@@ -124,9 +140,9 @@ export async function judgeComplexity(prompt: string): Promise<JudgeVerdict | nu
   if (!parsed) return null;
 
   const modelName =
-    MODEL_CATALOG.find((m) => m.id === JUDGE_MODEL_ID)?.displayName ?? JUDGE_MODEL_ID;
+    MODEL_CATALOG.find((m) => m.id === judgeId)?.displayName ?? judgeId;
 
-  const verdict: JudgeVerdict = { ...parsed, modelId: JUDGE_MODEL_ID, modelName };
+  const verdict: JudgeVerdict = { ...parsed, modelId: judgeId, modelName };
   cacheSet(key, verdict);
   return verdict;
 }

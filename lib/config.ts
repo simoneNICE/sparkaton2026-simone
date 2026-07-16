@@ -41,6 +41,13 @@ export const MODEL_CATALOG: ModelSpec[] = [
   { id: "qwen3-235b",     displayName: "Qwen3 235B",     provider: "alibaba", tier: 2, inputCostPer1M: 0.20, outputCostPer1M: 0.60, capabilities: { code: 0.85, reasoning: 0.86, math: 0.90, general: 0.85 } },
 ];
 
+// "Cheap" models = tier 1 (economy). These are the only models offered as the
+// up-front complexity judge (see lib/judge.ts) — a judge must cost far less than
+// the models it routes to, or the extra call defeats the savings.
+export function cheapModelIds(): string[] {
+  return MODEL_CATALOG.filter((m) => m.tier === 1).map((m) => m.id);
+}
+
 // The standard model NICE would use by default for everything.
 // It is the savings baseline every routed choice is compared against. The
 // router does NOT pin it to any tier — tiers pick the cheapest capable model.
