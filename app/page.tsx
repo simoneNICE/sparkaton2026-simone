@@ -564,7 +564,6 @@ export default function Home() {
   const [result, setResult] = useState<RouteResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Real-answer feature: run the routed model + NICE Default via Bedrock.
-  const [runReal, setRunReal] = useState(false);
   const [answers, setAnswers] = useState<AnswersResult | null>(null);
   const [answersLoading, setAnswersLoading] = useState(false);
   const [answersError, setAnswersError] = useState<string | null>(null);
@@ -948,26 +947,6 @@ export default function Home() {
               </select>
             </label>
 
-            {/* Optional: run the real answers (routed model + NICE Default) via Bedrock */}
-            <label
-              title="Run the routed model and the NICE Default on Bedrock to compare their real answers"
-              style={{
-                fontSize: 13,
-                color: "var(--text)",
-                display: "flex",
-                gap: 6,
-                alignItems: "center",
-                cursor: "pointer",
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={runReal}
-                onChange={(e) => setRunReal(e.target.checked)}
-              />
-              Run real answers via Bedrock
-            </label>
-
             <button
               onClick={() => runRoute()}
               disabled={loading || !prompt.trim()}
@@ -1173,8 +1152,7 @@ export default function Home() {
             </section>
 
             {/* Real model answers — routed model vs NICE Default, via Bedrock */}
-            {runReal ? (
-              <section style={{ ...panel, padding: 18 }}>
+            <section style={{ ...panel, padding: 18 }}>
                 <div
                   style={{
                     display: "flex",
@@ -1253,22 +1231,6 @@ export default function Home() {
                   />
                 </div>
               </section>
-            ) : (
-              <section
-                style={{
-                  ...panel,
-                  padding: 16,
-                  borderStyle: "dashed",
-                  textAlign: "center",
-                  color: "var(--muted)",
-                  fontSize: 13,
-                }}
-              >
-                Tick <strong style={{ color: "var(--text)" }}>“Run real answers via Bedrock”</strong>{" "}
-                above to run the routed model and the NICE Default side by side. The routing
-                decision here is already final and real.
-              </section>
-            )}
           </>
         )}
       </div>
