@@ -10,13 +10,14 @@ const CUSTOM_LABEL = "✎ Custom prompt";
 
 // Ordered complexity buckets shown as <optgroup> headers in the example
 // dropdown, so the expected difficulty of each prompt is explicit.
-type ExampleGroup = "easy" | "creative" | "medium" | "coding" | "hard";
+type ExampleGroup = "easy" | "creative" | "medium" | "coding" | "hard" | "summary";
 const EXAMPLE_GROUPS: { key: ExampleGroup; label: string }[] = [
-  { key: "easy", label: "🟢 Easy — expected Economy" },
-  { key: "creative", label: "✍️ Creative (short) — expected Economy" },
-  { key: "medium", label: "🟡 Medium — expected Standard" },
-  { key: "coding", label: "💻 Coding — Standard / Premium" },
-  { key: "hard", label: "🔴 Hard reasoning — expected Premium" },
+  { key: "easy", label: "🟢 Easy — Economy" },
+  { key: "creative", label: "✍️ Creative (short) — Economy" },
+  { key: "medium", label: "🟡 Medium — Economy / Standard" },
+  { key: "coding", label: "💻 Coding — Economy / Standard" },
+  { key: "hard", label: "🔴 Hard reasoning — Economy / Standard" },
+  { key: "summary", label: "📞 Call AutoSummary" },
 ];
 
 const EXAMPLES: { label: string; group: ExampleGroup; prompt: string }[] = [
@@ -87,10 +88,10 @@ const EXAMPLES: { label: string; group: ExampleGroup; prompt: string }[] = [
       "Compare SQL and NoSQL databases and recommend one for an e-commerce catalog.",
   },
   {
-    // High-stakes, general-dominant → no cheaper model is close enough on
-    // quality, so the router correctly stays on the Sonnet standard (0% saving).
+    // High-stakes but broad-language → cost-first still finds a cheap capable
+    // model; the premium (approval) option covers the extra-assurance case.
     group: "medium",
-    label: "GDPR audit summary (stays on Sonnet)",
+    label: "GDPR audit summary (high-stakes)",
     prompt:
       "Summarize the key GDPR compliance obligations in this data processing contract for our upcoming audit.",
   },
@@ -146,7 +147,7 @@ const EXAMPLES: { label: string; group: ExampleGroup; prompt: string }[] = [
       "Plan a 3-day conference schedule for 4 parallel tracks and 30 talks, where 6 speakers can each only present on day 1, and no track may have two talks in the same slot. Explain the scheduling strategy.",
   },
   {
-    group: "hard",
+    group: "summary",
     label: "Copilot AutoSummary — Example 1",
     prompt: `You are tasked with analyzing customer service interactions as an agent. Follow this refined process:
 
@@ -229,7 +230,7 @@ Agent: Glad to help small thing, but. It makes a difference on a, long flight.
 Customer: Exactly especial.`,
   },
   {
-    group: "hard",
+    group: "summary",
     label: "Copilot AutoSummary — Example 2",
     prompt: `You are tasked with analyzing customer service interactions as an agent. Follow this refined process:
 
@@ -324,16 +325,99 @@ Agent: All right, thank you.
 Client: Thank you so much!
 Agent: Bye-bye.`,
   },
+
+  // — Call AutoSummary (metadata-scored, verified against the live router) —
+  // Calibrated around the NICE baseline (Claude 4.5 Haiku): one summary routes
+  // BELOW it (a cheaper specialist that's good enough), two land ON it (Haiku is
+  // the best value), one goes ABOVE it (a task that needs a stronger model).
+  // No prompt is special-cased — placement comes purely from content.
+  {
+    // Math-dominant (totals/figures) → the router picks the cheaper math
+    // specialist Qwen3 32B; ~97% of Haiku's math quality at a fraction of cost.
+    group: "summary",
+    label: "AutoSummary — billing total (math-heavy)",
+    prompt: `Summarize this billing call, then calculate the total charged.
+
+Agent: The invoice has a base fee of 40, an add-on of 15, and a late fee of 5, minus a 10 credit.`,
+  },
+  {
+    // Plain general summary → no cheaper Economy model matches Haiku's general
+    // quality, so the router selects the baseline itself.
+    group: "summary",
+    label: "AutoSummary — appointment confirm (simple)",
+    prompt: `Summarize this short customer call in three bullet points.
+
+Agent: Hi, thanks for calling. How can I help?
+Customer: I just wanted to confirm my appointment for Thursday.
+Agent: Yes, you're booked for Thursday at 10. See you then.
+Customer: Great, thank you.`,
+  },
+  {
+    // Light reasoning ("explain … whether it was resolved") but still Economy —
+    // Haiku leads reasoning at this tier, so it stays on the baseline.
+    group: "summary",
+    label: "AutoSummary — support recap (light reasoning)",
+    prompt: `In two sentences, explain what the customer wanted and whether it was resolved.
+
+Agent: Support here, how can I help?
+Customer: My app keeps logging me out every few minutes.
+Agent: I've reset your session token, that should stop it. Let me know if it recurs.
+Customer: Okay, thanks.`,
+  },
+  {
+    // High-stakes (compliance/financial), broad-language summary → the router
+    // spends above the Haiku baseline for a real quality upgrade (Sonnet 4.5):
+    // no cheaper model is close enough on the general skill.
+    group: "summary",
+    label: "AutoSummary — compliance recap (high-stakes)",
+    prompt: `Summarize this call for our records. Produce these sections:
+- CALLER
+- PURPOSE OF CALL
+- ACTIONS TAKEN
+- OUTCOME
+- FOLLOW-UP
+
+Use a neutral, professional tone and keep it under 200 words. This summary will be filed for a compliance audit, so keep it factual and exclude any sensitive financial account numbers.
+
+Agent: Thank you for calling, how can I help?
+Customer: Hi, I need to update the billing details on my business account.
+Agent: I can help with that. Can you confirm the company name on the account?
+Customer: Yes, it's Marlow Trading.
+Agent: Thank you. What would you like to change?
+Customer: The card on file expired, I want to add a new one.
+Agent: I've added the new card and set it as the default payment method.
+Customer: Will the next invoice use the new card?
+Agent: Yes, the next invoice on the first of the month will be charged to it.
+Customer: And can I get a copy of the last invoice?
+Agent: I've emailed a copy of the last invoice to the address on file.
+Customer: Perfect, thank you.
+Agent: You're welcome. Is there anything else?
+Customer: No, that's everything.`,
+  },
 ];
 
-// Discrete quality/cost preference levels. `value` feeds the same score bias
-// (qualityBiasFromPref): 0 → -35 (cheapest) … 100 → +35 (max quality).
-const QUALITY_OPTIONS: { value: number; label: string }[] = [
-  { value: 0, label: "💰 Max cost saving" },
-  { value: 25, label: "Cost-oriented" },
-  { value: 50, label: "Balanced" },
-  { value: 75, label: "Quality-oriented" },
-  { value: 100, label: "🎯 Max quality" },
+// The three cost/quality stances the user can pick. Each maps to a qualityPref
+// (0 / 50 / 100) that shifts the affinity floor: lower floor = cheaper models,
+// higher floor = stronger (pricier) ones.
+const COST_QUALITY_MODES: { pref: number; icon: string; label: string; desc: string }[] = [
+  {
+    pref: 0,
+    icon: "💰",
+    label: "Max savings",
+    desc: "Always the cheapest model that can do the job. Stronger models only if you approve.",
+  },
+  {
+    pref: 50,
+    icon: "⚖️",
+    label: "Balanced",
+    desc: "Best value per task — low cost by default, a premium upgrade one click away.",
+  },
+  {
+    pref: 100,
+    icon: "🎯",
+    label: "Quality first",
+    desc: "Leans to stronger models, spending more when it measurably lifts the answer.",
+  },
 ];
 
 // Routing algorithms we use / will use. All shown active in this POC.
@@ -485,6 +569,7 @@ export default function Home() {
 
   const a = result?.assessment;
   const sv = result?.savingsVsDefault;
+  const qv = result?.qualityVsDefault;
 
   return (
     <>
@@ -516,8 +601,9 @@ export default function Home() {
           <strong style={{ color: "var(--text)" }}>
             NICE standard ({MODEL_CATALOG.find((m) => m.id === standardId)?.displayName ?? standardId})
           </strong>{" "}
-          — easy prompts get downgraded to save cost; harder ones can cost more than the standard when
-          quality matters. Change the standard above to compare.
+          — every routed choice is compared on <strong style={{ color: "var(--text)" }}>two axes</strong>:
+          cost and quality. Easy prompts drop to a cheaper model at equal-or-better quality; harder ones
+          cost more but buy a real capability upgrade. Change the standard above to compare.
         </p>
       </header>
 
@@ -578,31 +664,55 @@ export default function Home() {
             }}
           />
 
-          {/* Quality vs cost preference — hidden for now; defaults to Balanced (50) */}
-          {false && (
-            <div style={{ marginTop: 16 }}>
-              <label style={{ fontSize: 13, color: "var(--muted)", display: "flex", alignItems: "center", gap: 8 }}>
-                Quality vs cost&nbsp;
-                <select
-                  value={qualityPref}
-                  onChange={(e) => setQualityPref(Number(e.target.value))}
-                  style={{
-                    background: "var(--panel-2)",
-                    color: "var(--text)",
-                    border: "1px solid var(--border)",
-                    borderRadius: 8,
-                    padding: "4px 8px",
-                  }}
-                >
-                  {QUALITY_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+          {/* Cost vs quality stance — a three-state toggle the user controls. */}
+          <div style={{ marginTop: 16 }}>
+            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 8 }}>
+              Cost vs quality
             </div>
-          )}
+            <div
+              role="tablist"
+              style={{
+                display: "inline-flex",
+                border: "1px solid var(--border)",
+                borderRadius: 10,
+                overflow: "hidden",
+                background: "var(--panel-2)",
+                maxWidth: "100%",
+                flexWrap: "wrap",
+              }}
+            >
+              {COST_QUALITY_MODES.map((m, i) => {
+                const active = qualityPref === m.pref;
+                return (
+                  <button
+                    key={m.pref}
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setQualityPref(m.pref)}
+                    title={m.desc}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "8px 16px",
+                      fontSize: 13,
+                      fontWeight: active ? 700 : 500,
+                      border: "none",
+                      borderLeft: i > 0 ? "1px solid var(--border)" : "none",
+                      background: active ? "var(--accent)" : "transparent",
+                      color: active ? "#ffffff" : "var(--text)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <span>{m.icon}</span> {m.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>
+              {COST_QUALITY_MODES.find((m) => m.pref === qualityPref)?.desc}
+            </div>
+          </div>
 
           {/* Routing algorithm — which strategy decides the model */}
           <div style={{ marginTop: 16 }}>
@@ -787,7 +897,7 @@ export default function Home() {
         )}
 
         {/* RESULTS */}
-        {result && a && sv && (
+        {result && a && sv && qv && (
           <>
             {/* Decision summary */}
             <section style={{ ...panel, padding: 18 }}>
@@ -859,7 +969,19 @@ export default function Home() {
                     {result.qualityBias} → adjusted {result.adjustedScore}
                   </div>
                 </div>
-                <SavingsBadge absolute={sv.absolute} percent={sv.percent} />
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <SavingsBadge absolute={sv.absolute} percent={sv.percent} />
+                  <QualityBadge
+                    delta={qv.delta}
+                    relativePercent={qv.relativePercent}
+                    retainedPercent={qv.retainedPercent}
+                    savingsPercent={sv.percent}
+                    skill={qv.skill}
+                    selectedCap={qv.selectedCap}
+                    defaultCap={qv.defaultCap}
+                    defaultName={result.niceDefault.model.displayName}
+                  />
+                </div>
               </div>
             </section>
 
@@ -871,8 +993,10 @@ export default function Home() {
               <p style={{ fontSize: 12, color: "var(--muted)", margin: "0 0 12px" }}>
                 The <strong style={{ color: "var(--text)" }}>Skill fit</strong> column shows each
                 model's affinity for the detected task ({SKILL_META[result.dominantSkill as SkillKey].icon}{" "}
-                {SKILL_META[result.dominantSkill as SkillKey].label}). Within a tier the router prefers
-                the cheapest model whose affinity is close enough to the best.
+                {SKILL_META[result.dominantSkill as SkillKey].label}). The router picks the{" "}
+                <strong style={{ color: "var(--text)" }}>cheapest</strong> model whose affinity clears the
+                task's floor ({result.affinityFloor.toFixed(2)}); stronger, pricier models are offered only
+                as an approval-gated upgrade.
               </p>
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
@@ -1023,6 +1147,72 @@ function SavingsBadge({ absolute, percent }: { absolute: number; percent: number
       <div style={{ fontSize: 12, color: "var(--muted)" }}>On the standard</div>
       <div style={{ fontSize: 15, fontWeight: 800, color: "var(--amber)" }}>NICE Default</div>
       <div style={{ fontSize: 12, color: "var(--muted)" }}>no downgrade</div>
+    </div>
+  );
+}
+
+function QualityBadge({
+  delta,
+  relativePercent,
+  retainedPercent,
+  savingsPercent,
+  skill,
+  selectedCap,
+  defaultCap,
+  defaultName,
+}: {
+  delta: number;
+  relativePercent: number;
+  retainedPercent: number;
+  savingsPercent: number;
+  skill: string;
+  selectedCap: number;
+  defaultCap: number;
+  defaultName: string;
+}) {
+  const skillLabel = SKILL_META[skill as SkillKey]?.label ?? skill;
+  const tip = `${defaultName} scores ${defaultCap.toFixed(2)} on ${skillLabel}; the routed model scores ${selectedCap.toFixed(2)} (${delta >= 0 ? "+" : ""}${delta.toFixed(2)}).`;
+  const savingsAbs = Math.abs(Math.round(savingsPercent));
+
+  // Upgrade: routed model is stronger than the baseline on the dominant skill.
+  if (delta > 0.005) {
+    return (
+      <div
+        title={tip}
+        style={{ textAlign: "right", background: "rgba(91,157,255,0.10)", border: "1px solid var(--accent)", borderRadius: 12, padding: "10px 16px" }}
+      >
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>Quality vs baseline</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: "var(--accent)" }}>+{relativePercent.toFixed(0)}%</div>
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>more capable on {skillLabel.toLowerCase()}</div>
+      </div>
+    );
+  }
+  // Downgrade but deliberately "good enough" — cheaper model, quality retained.
+  if (delta < -0.005) {
+    return (
+      <div
+        title={tip}
+        style={{ textAlign: "right", background: "rgba(148,163,184,0.10)", border: "1px solid var(--border)", borderRadius: 12, padding: "10px 16px" }}
+      >
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>Quality retained</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: "var(--text)" }}>{retainedPercent.toFixed(0)}%</div>
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>
+          of baseline {savingsPercent > 0.5 ? `at −${savingsAbs}% cost` : `on ${skillLabel.toLowerCase()}`}
+        </div>
+      </div>
+    );
+  }
+  // Effectively on par with the baseline.
+  return (
+    <div
+      title={tip}
+      style={{ textAlign: "right", background: "rgba(52,211,153,0.10)", border: "1px solid var(--green)", borderRadius: 12, padding: "10px 16px" }}
+    >
+      <div style={{ fontSize: 12, color: "var(--muted)" }}>Quality vs baseline</div>
+      <div style={{ fontSize: 15, fontWeight: 800, color: "var(--green)" }}>
+        On par{savingsPercent > 0.5 ? ` · −${savingsAbs}% cost` : ""}
+      </div>
+      <div style={{ fontSize: 12, color: "var(--muted)" }}>same {skillLabel.toLowerCase()} capability</div>
     </div>
   );
 }
