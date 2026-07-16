@@ -21,3 +21,14 @@ html, body {
 }
 
 * { box-sizing: border-box; }
+
+/* Consistent, accent-colored focus ring across every control, replacing the
+   browser default outline (which renders differently per control/OS). */
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible,
+input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}

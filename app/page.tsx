@@ -409,7 +409,7 @@ const COST_QUALITY_MODES: { pref: number; icon: string; label: string; desc: str
   {
     pref: 50,
     icon: "⚖️",
-    label: "Balanced",
+    label: "Balanced (Recommended)",
     desc: "Best value per task — low cost by default, a premium upgrade one click away.",
   },
   {
@@ -462,6 +462,32 @@ const ROUTING_ALGORITHMS: {
   },
 ];
 
+// Long-form copy for the "Read more" about modal — the four strategies here
+// mirror ROUTING_ALGORITHMS above, written for a reader who wants the full
+// explanation rather than a one-line checkbox subtitle.
+const ABOUT_STRATEGIES: { icon: string; title: string; body: string }[] = [
+  {
+    icon: "🧠",
+    title: "Learned",
+    body: "Learns from historical requests, routing similar prompts to the lowest-cost model that has consistently delivered high-quality results. The more it's used, the smarter it becomes.",
+  },
+  {
+    icon: "📊",
+    title: "Metadata-Based",
+    body: "Uses transparent, deterministic rules based on request metadata such as complexity, domain, customer, or constraints. No LLM calls, zero inference cost, and near-zero latency.",
+  },
+  {
+    icon: "⚖️",
+    title: "Judged",
+    body: "Invoked only when the previous routing stages cannot confidently select a low-cost model. A lightweight LLM evaluates the request—or the quality of an initial response—and determines whether escalation to a more capable model is actually necessary. This keeps LLM routing costs to a minimum while preserving accuracy.",
+  },
+  {
+    icon: "⏱️",
+    title: "Timing",
+    body: "Optimizes for latency by selecting the lowest-cost model capable of meeting the required response-time SLA, ensuring speed without paying for unnecessary performance.",
+  },
+];
+
 const TIER_LABEL: Record<number, string> = {
   1: "Economy",
   2: "Standard",
@@ -507,7 +533,50 @@ function usd(n: number): string {
 const panel: React.CSSProperties = {
   background: "var(--panel)",
   border: "1px solid var(--border)",
-  borderRadius: 14,
+  borderRadius: 12,
+};
+
+// Shared control tokens — one label style, one field style, so every input on
+// the screen shares the same type, radius, and rhythm (8px system).
+const fieldLabel: React.CSSProperties = {
+  display: "block",
+  fontSize: 13,
+  fontWeight: 600,
+  color: "var(--text)",
+  marginBottom: 8,
+};
+const fieldControl: React.CSSProperties = {
+  width: "100%",
+  background: "var(--panel)",
+  color: "var(--text)",
+  border: "1px solid var(--border)",
+  borderRadius: 8,
+  padding: "10px 12px",
+  fontSize: 14,
+};
+// <select>-specific: white background (not the muted panel-2, which reads as
+// "disabled") plus a custom chevron, since the browser-default arrow looks
+// inconsistent once the native control styling is otherwise overridden.
+const fieldSelect: React.CSSProperties = {
+  ...fieldControl,
+  paddingRight: 36,
+  appearance: "none",
+  WebkitAppearance: "none",
+  MozAppearance: "none",
+  backgroundImage:
+    "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235b6b85' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")",
+  backgroundRepeat: "no-repeat",
+  backgroundPosition: "right 12px center",
+  backgroundSize: "16px",
+  cursor: "pointer",
+};
+const sectionKicker: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 600,
+  letterSpacing: 0.4,
+  textTransform: "uppercase",
+  color: "var(--muted)",
+  marginBottom: 16,
 };
 
 export default function Home() {
@@ -526,8 +595,11 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<RouteResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showAbout, setShowAbout] = useState(false);
   const hasResult = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const resultsAnchorRef = useRef<HTMLDivElement>(null);
+  const scrollToResultsRef = useRef(false);
 
   // Selecting an example loads its prompt AND clears any prior results, so it's
   // obvious the results panel no longer reflects the current prompt.
@@ -568,6 +640,15 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qualityPref, standardId, selectedAlgos]);
 
+  // Jump to the results after an explicit "Route prompt" click (not on the
+  // live re-route above, which happens while the user is still in settings).
+  useEffect(() => {
+    if (scrollToResultsRef.current && (result || error)) {
+      resultsAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      scrollToResultsRef.current = false;
+    }
+  }, [result, error]);
+
   const a = result?.assessment;
   const sv = result?.savingsVsDefault;
   const qv = result?.qualityVsDefault;
@@ -594,13 +675,36 @@ export default function Home() {
 
       <main style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 20px 80px" }}>
       <header style={{ marginBottom: 24 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>Better AI. Lower Cost. Smarter Routing.</h1>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {/* Logo — a request hub routed to four colored model nodes. */}
+          <svg
+            width="36"
+            height="36"
+            viewBox="0 0 36 36"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+            style={{ flexShrink: 0 }}
+          >
+            <rect width="36" height="36" rx="9" fill="#1a2536" />
+            <line x1="18" y1="18" x2="9" y2="9" stroke="#5b6b85" strokeWidth="1.5" />
+            <line x1="18" y1="18" x2="27" y2="9" stroke="#5b6b85" strokeWidth="1.5" />
+            <line x1="18" y1="18" x2="9" y2="27" stroke="#5b6b85" strokeWidth="1.5" />
+            <line x1="18" y1="18" x2="27" y2="27" stroke="#5b6b85" strokeWidth="1.5" />
+            <circle cx="9" cy="9" r="3.5" fill="#2563eb" />
+            <circle cx="27" cy="9" r="3.5" fill="#7c3aed" />
+            <circle cx="9" cy="27" r="3.5" fill="#059669" />
+            <circle cx="27" cy="27" r="3.5" fill="#d97706" />
+            <circle cx="18" cy="18" r="4" fill="#ffffff" />
+          </svg>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+            <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>Better AI. Lower Cost. Smarter Routing.</h1>
+            <span style={{ color: "var(--text)", fontSize: 15, fontWeight: 600 }}>
+              Save up to 90% on AI costs—while getting better results.
+            </span>
+          </div>
         </div>
-        <p style={{ color: "var(--text)", marginTop: 8, fontSize: 15, fontWeight: 600 }}>
-          Save up to 90% on AI costs—while getting better results.
-        </p>
-        <p style={{ color: "var(--muted)", marginTop: 6, fontSize: 14 }}>
+        <p style={{ color: "var(--muted)", marginTop: 10, fontSize: 14 }}>
           Before every AI request, Smarter Routing analyzes your prompt and automatically selects the
           best model for the job, balancing quality, speed, and cost in real time. Simple tasks go to
           efficient models, complex ones to the most capable—so you always get the right model at the
@@ -608,38 +712,43 @@ export default function Home() {
         </p>
         <p style={{ color: "var(--muted)", marginTop: 6, fontSize: 14 }}>
           Try the Model Router below with our sample prompts or enter your own and see the savings
-          compared to the standard{" "}
-          <strong style={{ color: "var(--text)" }}>
-            NICE setup ({MODEL_CATALOG.find((m) => m.id === standardId)?.displayName ?? standardId})
-          </strong>
-          .
+          compared to the{" "}
+          <strong style={{ color: "var(--text)" }}>NiCE Default</strong>{" "}
+          <button
+            onClick={() => setShowAbout(true)}
+            style={{
+              fontFamily: "inherit",
+              background: "none",
+              border: "none",
+              padding: 0,
+              color: "var(--accent)",
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: "pointer",
+              textDecoration: "underline",
+            }}
+          >
+            Read more
+          </button>
         </p>
       </header>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 20 }}>
-        {/* INPUT PANEL — two ways to begin, presented as a simple, linear,
-            step-by-step choice: pick an example first (the dropdown is the
-            first control users see), or type a prompt of their own. Both
-            steps share identical label styling for equal visual weight. */}
+      {showAbout && <AboutModal onClose={() => setShowAbout(false)} />}
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 24 }}>
+        {/* MAIN CARD — one continuous flow: choose an example → OR → type
+            your own → routing settings → primary CTA at the very end. */}
         <section style={{ ...panel, padding: 24 }}>
-          {/* Step 1 (primary) — choose an example */}
-          <div>
-            <label htmlFor="example-select" style={{ display: "block", fontSize: 14.5, fontWeight: 700, marginBottom: 8 }}>
-              💡 Choose an example
+          {/* Step 1 — choose an example */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <label htmlFor="example-select" style={{ ...fieldLabel, marginBottom: 0, whiteSpace: "nowrap" }}>
+              Choose a prompt example
             </label>
             <select
               id="example-select"
               value={exampleLabel}
               onChange={(e) => pickExample(e.target.value)}
-              style={{
-                width: "100%",
-                background: "var(--panel-2)",
-                color: "var(--text)",
-                border: "1px solid var(--border)",
-                borderRadius: 10,
-                padding: "10px 12px",
-                fontSize: 14,
-              }}
+              style={{ ...fieldSelect, flex: 1, minWidth: 200 }}
             >
               {exampleLabel === "" && (
                 <option value="" disabled>
@@ -656,106 +765,103 @@ export default function Home() {
                 </optgroup>
               ))}
             </select>
-            <p style={{ fontSize: 12.5, color: "var(--muted)", margin: "8px 0 0" }}>
-              Select one of the example prompts to quickly test the models.
-            </p>
-          </div>
-
-          {/* OR divider */}
-          <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "24px 0" }}>
-            <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
-            <span style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", letterSpacing: 0.5 }}>OR</span>
-            <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
           </div>
 
           {/* Step 2 — type your own prompt */}
-          <div>
-            <label htmlFor="prompt-textarea" style={{ display: "block", fontSize: 14.5, fontWeight: 700, marginBottom: 8 }}>
-              ✍️ Type your own prompt
-            </label>
+          <div style={{ marginTop: 24 }}>
             <textarea
               id="prompt-textarea"
               ref={textareaRef}
+              aria-label="Type your own prompt"
               value={prompt}
               onChange={(e) => {
                 setPrompt(e.target.value);
                 setExampleLabel(""); // typed prompt no longer matches an example
               }}
-              rows={6}
-              placeholder="Type your prompt here..."
+              onKeyDown={(e) => {
+                if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && prompt.trim() && !loading) {
+                  e.preventDefault();
+                  runRoute();
+                }
+              }}
+              rows={5}
+              placeholder="Type your prompt here…"
               style={{
-                width: "100%",
-                background: "var(--bg)",
-                color: "var(--text)",
-                border: "1px solid var(--border)",
-                borderRadius: 10,
-                padding: 12,
-                fontSize: 14,
-                fontFamily: "ui-monospace, monospace",
+                ...fieldControl,
+                background: "var(--panel)",
+                lineHeight: 1.5,
                 resize: "vertical",
               }}
             />
           </div>
 
-          {/* Cost vs quality stance — a three-state toggle the user controls. */}
-          <div style={{ marginTop: 16 }}>
-            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 8 }}>
-              Cost vs quality
+          {/* Section divider — separates the prompt from routing settings
+              within the same card. */}
+          <div style={{ borderTop: "1px solid var(--border)", margin: "24px 0" }} />
+
+          <div style={sectionKicker}>Routing settings</div>
+
+          {/* Cost vs quality + baseline — two related dropdowns, side by side. */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+              gap: 16,
+              alignItems: "start",
+            }}
+          >
+            <div>
+              <label htmlFor="cost-quality-select" style={fieldLabel}>
+                Cost vs quality
+              </label>
+              <select
+                id="cost-quality-select"
+                value={qualityPref}
+                onChange={(e) => setQualityPref(Number(e.target.value))}
+                style={fieldSelect}
+              >
+                {COST_QUALITY_MODES.map((m) => (
+                  <option key={m.pref} value={m.pref}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+              <p style={{ fontSize: 12, color: "var(--muted)", margin: "8px 0 0" }}>
+                {COST_QUALITY_MODES.find((m) => m.pref === qualityPref)?.desc}
+              </p>
             </div>
-            <div
-              role="tablist"
-              style={{
-                display: "inline-flex",
-                border: "1px solid var(--border)",
-                borderRadius: 10,
-                overflow: "hidden",
-                background: "var(--panel-2)",
-                maxWidth: "100%",
-                flexWrap: "wrap",
-              }}
-            >
-              {COST_QUALITY_MODES.map((m, i) => {
-                const active = qualityPref === m.pref;
-                return (
-                  <button
-                    key={m.pref}
-                    role="tab"
-                    aria-selected={active}
-                    onClick={() => setQualityPref(m.pref)}
-                    title={m.desc}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      padding: "8px 16px",
-                      fontSize: 13,
-                      fontWeight: active ? 700 : 500,
-                      border: "none",
-                      borderLeft: i > 0 ? "1px solid var(--border)" : "none",
-                      background: active ? "var(--accent)" : "transparent",
-                      color: active ? "#ffffff" : "var(--text)",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <span>{m.icon}</span> {m.label}
-                  </button>
-                );
-              })}
-            </div>
-            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>
-              {COST_QUALITY_MODES.find((m) => m.pref === qualityPref)?.desc}
+
+            <div>
+              <label htmlFor="baseline-select" style={fieldLabel}>
+                NiCE Default (baseline)
+              </label>
+              <select
+                id="baseline-select"
+                value={standardId}
+                onChange={(e) => setStandardId(e.target.value)}
+                title="The model NiCE would use by default — every routed choice is compared against it"
+                style={fieldSelect}
+              >
+                {MODEL_CATALOG.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.displayName} — {TIER_LABEL[m.tier]}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
           {/* Routing algorithm — which strategy decides the model */}
-          <div style={{ marginTop: 16 }}>
-            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 8 }}>
-              Routing algorithm
-            </div>
+          <div style={{ marginTop: 24 }}>
+            <label style={fieldLabel}>Routing algorithm</label>
+            <p style={{ fontSize: 12, color: "var(--muted)", margin: "-4px 0 12px" }}>
+              Keeping all four selected is the recommended configuration — each stage only runs
+              when the previous one isn't confident, so nothing extra is spent.
+            </p>
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
                 gap: 8,
               }}
             >
@@ -772,11 +878,10 @@ export default function Home() {
                       alignItems: "center",
                       gap: 10,
                       padding: "10px 12px",
-                      borderRadius: 10,
+                      borderRadius: 8,
                       border: "1px solid var(--border)",
-                      background: "var(--panel-2)",
+                      background: "var(--panel)",
                       cursor: "pointer",
-                      transition: "border-color 120ms ease, background 120ms ease",
                     }}
                   >
                     <input
@@ -790,25 +895,25 @@ export default function Home() {
                         )
                       }
                       style={{
-                        width: 17,
-                        height: 17,
-                        accentColor: "var(--accent)",
+                        width: 16,
+                        height: 16,
+                        accentColor: "var(--text)",
                         cursor: "pointer",
                         flexShrink: 0,
                       }}
                     />
-                    <span style={{ lineHeight: 1.3 }}>
+                    <span style={{ lineHeight: 1.35 }}>
                       <span
                         style={{
                           display: "block",
                           fontSize: 13,
-                          fontWeight: 700,
+                          fontWeight: 600,
                           color: checked ? "var(--text)" : "var(--muted)",
                         }}
                       >
                         {algo.title}
                       </span>
-                      <span style={{ display: "block", fontSize: 11.5, color: "var(--muted)", marginTop: 1 }}>
+                      <span style={{ display: "block", fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
                         {algo.subtitle}
                       </span>
                     </span>
@@ -821,15 +926,15 @@ export default function Home() {
                           left: 0,
                           right: 0,
                           zIndex: 20,
-                          background: "var(--bg)",
+                          background: "var(--panel)",
                           color: "var(--text)",
-                          border: "1px solid var(--accent)",
-                          borderRadius: 10,
+                          border: "1px solid var(--border)",
+                          borderRadius: 8,
                           padding: "10px 12px",
                           fontSize: 12,
                           fontWeight: 400,
-                          lineHeight: 1.45,
-                          boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
+                          lineHeight: 1.5,
+                          boxShadow: "0 4px 16px rgba(16,24,40,0.10)",
                         }}
                       >
                         {algo.description}
@@ -841,81 +946,31 @@ export default function Home() {
             </div>
           </div>
 
+          {/* Route prompt — the primary action, at the very end of the flow */}
           <div
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 16,
-              marginTop: 14,
-              flexWrap: "wrap",
+              justifyContent: "flex-end",
+              gap: 12,
+              marginTop: 24,
             }}
           >
-            <label style={{ fontSize: 13, color: "var(--muted)" }}>
-              NICE standard (baseline)&nbsp;
-              <select
-                value={standardId}
-                onChange={(e) => setStandardId(e.target.value)}
-                title="The model NICE would use by default — every routed choice is compared against it"
-                style={{
-                  background: "var(--panel-2)",
-                  color: "var(--text)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 8,
-                  padding: "4px 8px",
-                  maxWidth: "100%",
-                }}
-              >
-                {MODEL_CATALOG.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.displayName} — {TIER_LABEL[m.tier]}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            {/* Coming soon — future optional real answer via Claude CLI */}
-            <label
-              title="Coming soon"
-              style={{
-                fontSize: 13,
-                color: "var(--muted)",
-                display: "flex",
-                gap: 6,
-                alignItems: "center",
-                opacity: 0.55,
-                cursor: "not-allowed",
-              }}
-            >
-              <input type="checkbox" disabled />
-              Run real answer via Claude CLI
-              <span
-                style={{
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: 0.5,
-                  color: "var(--accent)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 999,
-                  padding: "1px 7px",
-                }}
-              >
-                COMING SOON
-              </span>
-            </label>
-
             <button
-              onClick={() => runRoute()}
+              onClick={() => {
+                scrollToResultsRef.current = true;
+                runRoute();
+              }}
               disabled={loading || !prompt.trim()}
               style={{
-                marginLeft: "auto",
-                background: "var(--accent)",
-                color: "#ffffff",
-                fontWeight: 700,
-                border: "none",
-                borderRadius: 10,
-                padding: "9px 20px",
-                cursor: loading ? "default" : "pointer",
-                opacity: loading || !prompt.trim() ? 0.6 : 1,
+                background: loading || !prompt.trim() ? "var(--panel-2)" : "var(--accent)",
+                color: loading || !prompt.trim() ? "var(--muted)" : "#ffffff",
+                fontSize: 14,
+                fontWeight: 600,
+                border: loading || !prompt.trim() ? "1px solid var(--border)" : "1px solid var(--accent)",
+                borderRadius: 8,
+                padding: "10px 24px",
+                cursor: loading || !prompt.trim() ? "default" : "pointer",
               }}
             >
               {loading ? "Routing…" : "Route prompt"}
@@ -923,15 +978,17 @@ export default function Home() {
           </div>
         </section>
 
-        {error && (
-          <div style={{ ...panel, padding: 14, borderColor: "var(--red)", color: "var(--red)" }}>
-            {error}
-          </div>
-        )}
+        {(error || (result && a && sv && qv)) && (
+          <div ref={resultsAnchorRef} style={{ display: "grid", gap: 24 }}>
+            {error && (
+              <div style={{ ...panel, padding: 14, borderColor: "var(--red)", color: "var(--red)" }}>
+                {error}
+              </div>
+            )}
 
-        {/* RESULTS */}
-        {result && a && sv && qv && (
-          <>
+            {/* RESULTS */}
+            {result && a && sv && qv && (
+              <>
             {/* Decision summary */}
             <section style={{ ...panel, padding: 18 }}>
               <div style={{ display: "flex", gap: 24, alignItems: "center", flexWrap: "wrap" }}>
@@ -1085,7 +1142,7 @@ export default function Home() {
                           </td>
                           <td style={{ ...td, whiteSpace: "nowrap" }}>
                             {c.isSelected && <Chip color="var(--accent)">◀ SELECTED</Chip>}
-                            {c.isNiceDefault && <Chip color="var(--amber)">NICE DEFAULT</Chip>}
+                            {c.isNiceDefault && <Chip color="var(--amber)">NiCE DEFAULT</Chip>}
                           </td>
                         </tr>
                       );
@@ -1121,12 +1178,14 @@ export default function Home() {
                 Real model answer — coming soon
               </div>
               <p style={{ fontSize: 13, margin: "8px auto 0", maxWidth: 560 }}>
-                Next step: an optional switch to actually run the selected model (and the NICE
+                Next step: an optional switch to actually run the selected model (and the NiCE
                 Default for comparison) via the local Claude CLI, to verify the choice was good
                 enough. The routing decision above is already final and real.
               </p>
             </section>
-          </>
+              </>
+            )}
+          </div>
         )}
       </div>
     </main>
@@ -1160,7 +1219,7 @@ function SavingsBadge({ absolute, percent }: { absolute: number; percent: number
   if (absolute > 0) {
     return (
       <div style={{ textAlign: "right", background: "rgba(52,211,153,0.1)", border: "1px solid var(--green)", borderRadius: 12, padding: "10px 16px" }}>
-        <div style={{ fontSize: 12, color: "var(--muted)" }}>Saved vs NICE Default</div>
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>Saved vs NiCE Default</div>
         <div style={{ fontSize: 22, fontWeight: 800, color: "var(--green)" }}>{percent.toFixed(1)}%</div>
         <div style={{ fontSize: 12, color: "var(--muted)" }}>{usd(absolute)} / call</div>
       </div>
@@ -1171,14 +1230,14 @@ function SavingsBadge({ absolute, percent }: { absolute: number; percent: number
       <div style={{ textAlign: "right", background: "rgba(248,113,113,0.08)", border: "1px solid var(--red)", borderRadius: 12, padding: "10px 16px" }}>
         <div style={{ fontSize: 12, color: "var(--muted)" }}>Premium spend</div>
         <div style={{ fontSize: 22, fontWeight: 800, color: "var(--red)" }}>+{Math.abs(percent).toFixed(1)}%</div>
-        <div style={{ fontSize: 12, color: "var(--muted)" }}>vs NICE Default (hard task)</div>
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>vs NiCE Default (hard task)</div>
       </div>
     );
   }
   return (
     <div style={{ textAlign: "right", background: "rgba(251,191,36,0.08)", border: "1px solid var(--amber)", borderRadius: 12, padding: "10px 16px" }}>
       <div style={{ fontSize: 12, color: "var(--muted)" }}>On the standard</div>
-      <div style={{ fontSize: 15, fontWeight: 800, color: "var(--amber)" }}>NICE Default</div>
+      <div style={{ fontSize: 15, fontWeight: 800, color: "var(--amber)" }}>NiCE Default</div>
       <div style={{ fontSize: 12, color: "var(--muted)" }}>no downgrade</div>
     </div>
   );
@@ -1305,6 +1364,143 @@ function ContribRow({ c }: { c: { label: string; points: number; weight: number;
         {c.points}
       </div>
       <div style={{ width: 220, fontSize: 11, color: "var(--muted)" }}>{c.evidence}</div>
+    </div>
+  );
+}
+
+// "Read more" — the long-form explanation of the routing system, shown as a
+// dismissible modal so it doesn't compete with the primary flow on the page.
+function AboutModal({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const modalP: React.CSSProperties = { fontSize: 14, color: "var(--muted)", lineHeight: 1.6, margin: "0 0 12px" };
+  const modalH3: React.CSSProperties = { fontSize: 16, fontWeight: 700, margin: "0 0 8px" };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="about-modal-title"
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(16,24,40,0.5)",
+        display: "flex",
+        justifyContent: "center",
+        padding: "48px 20px",
+        zIndex: 100,
+        overflowY: "auto",
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "var(--panel)",
+          border: "1px solid var(--border)",
+          borderRadius: 12,
+          maxWidth: 980,
+          width: "100%",
+          minWidth: 0,
+          height: "fit-content",
+          padding: 32,
+          position: "relative",
+        }}
+      >
+        <button
+          onClick={onClose}
+          aria-label="Close"
+          style={{
+            position: "absolute",
+            top: 16,
+            right: 16,
+            background: "var(--panel-2)",
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+            width: 32,
+            height: 32,
+            cursor: "pointer",
+            fontSize: 16,
+            color: "var(--muted)",
+            lineHeight: 1,
+          }}
+        >
+          ✕
+        </button>
+
+        <h2 id="about-modal-title" style={{ fontSize: 20, fontWeight: 700, margin: "0 32px 4px 0" }}>
+          Better AI. Lower Cost. Smarter Routing.
+        </h2>
+        <p style={{ fontSize: 14, fontWeight: 600, color: "var(--text)", margin: "0 0 16px" }}>
+          Save up to 90% on token costs—while improving AI quality.
+        </p>
+
+        <p style={modalP}>
+          Most AI applications rely on a single model for every request, regardless of complexity.
+          That means you're often paying premium prices for simple tasks that don't need a premium
+          model.
+        </p>
+        <p style={modalP}>
+          Smarter Routing changes that. Before every AI call, it analyzes your prompt and
+          automatically selects the model that delivers the best balance of quality, speed, and
+          cost. Simple requests are routed to lightweight models, while complex reasoning tasks go
+          to the most capable ones—ensuring you never pay for more intelligence than you actually
+          need.
+        </p>
+        <p style={{ ...modalP, marginBottom: 24 }}>
+          A real-time Quality ↔ Cost slider lets you choose how aggressively to optimize for
+          savings, with instant re-routing. Through a unified interface, you can access 16 leading
+          AI models, including Claude, Amazon Nova, Google Gemma, OpenAI GPT-OSS, and Alibaba Qwen.
+        </p>
+
+        <h3 style={modalH3}>Progressive Routing Pipeline</h3>
+        <p style={modalP}>
+          Smarter Routing doesn't run every routing algorithm on every request. Instead, it uses a
+          progressive routing pipeline, where algorithms are executed from the cheapest to the most
+          sophisticated. Each stage attempts to confidently select the optimal model, and the next
+          stage is only invoked when needed.
+        </p>
+        <p style={{ ...modalP, marginBottom: 24 }}>
+          This cascading approach minimizes routing overhead, avoids unnecessary LLM calls, and
+          dramatically reduces token consumption while maintaining the highest possible response
+          quality.
+        </p>
+
+        <h3 style={{ ...modalH3, marginBottom: 12 }}>Four complementary routing strategies</h3>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 24 }}>
+          {ABOUT_STRATEGIES.map((s) => (
+            <div key={s.title} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+              <span style={{ fontSize: 18, lineHeight: 1.4 }} aria-hidden="true">
+                {s.icon}
+              </span>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{s.title}</div>
+                <p style={{ fontSize: 13.5, color: "var(--muted)", lineHeight: 1.55, margin: "2px 0 0" }}>
+                  {s.body}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}>
+          <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", margin: "0 0 8px" }}>
+            The most expensive router is the one you never have to call.
+          </p>
+          <p style={{ fontSize: 13.5, color: "var(--muted)", lineHeight: 1.6, margin: 0 }}>
+            Smarter Routing escalates intelligently—from deterministic algorithms to AI-based
+            reasoning—only when confidence is low. In most cases, routing is completed without
+            invoking another LLM, enabling up to 90% lower token costs compared to the standard
+            NiCE approach.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
