@@ -67,6 +67,19 @@ export interface ModelCostEstimate {
   vsDefault: { absolute: number; percent: number };
 }
 
+// How the selected model was decided: "recall" = looked up from a similar
+// past prompt (see lib/recall.ts), "metadata" = computed by the complexity
+// scorer (lib/scoring.ts + lib/router.ts).
+export type RouteSource = "recall" | "metadata";
+
+// Present only when source === "recall" — the past prompt this request
+// matched against, and how confident that match was.
+export interface RecallInfo {
+  matchedPrompt: string;
+  similarityScore: number; // 0..1
+  matchType: string; // e.g. "fuzzy_text_match"
+}
+
 export interface RouteResult {
   assessment: ComplexityAssessment;
   qualityBias: number; // from the quality/cost slider (-35..+35)
@@ -82,6 +95,39 @@ export interface RouteResult {
     absolute: number;
     percent: number;
   };
+  // Quality vs the NICE Default, measured as capability on the dominant skill.
+  // delta > 0 = the routed model is stronger than the baseline on this skill
+  // (a quality upgrade); delta < 0 = a cheaper model that's still good enough.
+  qualityVsDefault: {
+    skill: Skill;
+    selectedCap: number;
+    defaultCap: number;
+    // Raw capability difference on the dominant skill (0..1 scale). Kept for
+    // tooltips; the UI leads with the relative figures below, which read better.
+    delta: number;
+    // Signed relative change vs baseline, in %. +9 = 9% more capable on the
+    // skill; -4 = 4% less. Derived from delta/defaultCap so small absolute
+    // deltas surface as meaningful percentages.
+    relativePercent: number;
+    // Fraction of baseline capability retained, in % (selectedCap/defaultCap).
+    // For downgrades this is the "98% of baseline quality" headline.
+    retainedPercent: number;
+  };
+  // The affinity floor (0..1) the task required on its dominant skill. The auto
+  // pick is the cheapest model clearing this bar.
+  affinityFloor: number;
+  // An approval-gated upgrade: a stronger, pricier model the user can opt into
+  // for more quality. null when the auto pick is already near-best, or the
+  // upgrade isn't worth surfacing. The router never takes this automatically.
+  premiumOption: {
+    model: ModelSpec;
+    cost: CostBreakdown;
+    capDelta: number; // absolute affinity gain on the dominant skill vs auto pick
+    qualityRelPercent: number; // relative quality gain vs auto pick, %
+    costPercent: number; // relative cost increase vs auto pick, %
+  } | null;
   // Every model's estimated cost for this request (for the comparison table).
   catalog: ModelCostEstimate[];
+  source: RouteSource;
+  recall?: RecallInfo;
 }
