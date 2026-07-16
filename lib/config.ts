@@ -48,6 +48,13 @@ export const MODEL_CATALOG: ModelSpec[] = [
 // a 50% discount traded for latency headroom (batch/flex tier).
 export const FLEX_DISCOUNT = 0.5;
 
+// "Cheap" models = tier 1 (economy). These are the only models offered as the
+// up-front complexity judge (see lib/judge.ts) — a judge must cost far less than
+// the models it routes to, or the extra call defeats the savings.
+export function cheapModelIds(): string[] {
+  return MODEL_CATALOG.filter((m) => m.tier === 1).map((m) => m.id);
+}
+
 // The standard model NICE would use by default for everything.
 // It is the savings baseline every routed choice is compared against. The
 // router does NOT pin it to any tier — tiers pick the cheapest capable model.
