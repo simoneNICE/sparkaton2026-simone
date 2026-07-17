@@ -161,9 +161,14 @@ export function capabilityToleranceFromPref(pref: number): number {
 // The adjustedScore already carries the Cost/Balanced/Quality lean, so one curve
 // serves all three modes:
 //   score 0 -> 0.35   score 50 -> 0.65   score 100 -> 0.95
-export function affinityFloorFromScore(score: number): number {
+export function affinityFloorFromScore(
+  score: number,
+  overrides?: { base?: number; slope?: number },
+): number {
   const clamped = Math.max(0, Math.min(100, score));
-  return Math.round((0.35 + clamped * 0.006) * 100) / 100;
+  const base = overrides?.base ?? 0.35;
+  const slope = overrides?.slope ?? 0.006;
+  return Math.round((base + clamped * slope) * 100) / 100;
 }
 
 // A premium upgrade is only surfaced (as an approval-gated option) when the
