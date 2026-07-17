@@ -27,8 +27,9 @@ const CUSTOM_LABEL = "✎ Custom prompt";
 // (Intent & Triage, Summarization & Agent Assist, Data & Insights, Quality &
 // Coaching), each with an Easy / Medium / Hard rung so the difficulty ladder is
 // explicit inside every category.
-type ExampleGroup = "intent" | "summary" | "data" | "quality";
+type ExampleGroup = "intent" | "summary" | "data" | "quality" | "demo";
 const EXAMPLE_GROUPS: { key: ExampleGroup; label: string }[] = [
+  { key: "demo", label: "🧪 Demo Prompts" },
   { key: "intent", label: "🧭 Intent & Triage" },
   { key: "summary", label: "📝 Summarization & Agent Assist" },
   { key: "data", label: "📊 Data & Insights" },
@@ -42,7 +43,7 @@ const EXAMPLE_GROUPS: { key: ExampleGroup; label: string }[] = [
 // spend. Contact-center text tasks standardize on Claude Sonnet 4.5 as their
 // production baseline. The prompts reuse the actual NICE template instructions
 // where noted.
-const EXAMPLES: { label: string; group: ExampleGroup; baselineId: string; prompt: string }[] = [
+const EXAMPLES: { label: string; group: ExampleGroup; baselineId: string; algos?: string[]; prompt: string }[] = [
   // ——— Intent & Triage ———
   {
     // Real: Orchestration-IsRequestingInformationPromptClaude (prod Claude 4.5 Haiku).
@@ -228,6 +229,101 @@ Agent: Completely understand. I've refunded the duplicate charge; it'll appear i
 Customer: Great, thanks.
 Agent: Anything else? … Take care, Dana.`,
   },
+
+  // ——— Demo Prompts (one per routing algorithm the app supports) ———
+  {
+    // "Learned" / recall: matches a stored prompt in the recall DB
+    // (lib/matcher-db.json → gemma-3-27b), so the model is recalled from history
+    // with no computation. algos pinned to ["recall"] to isolate the effect.
+    group: "demo",
+    label: "🧠 Learned — recalled from history",
+    baselineId: "claude-sonnet-4.5",
+    algos: ["recall"],
+    prompt: `Write a SQL query for the following user request: Find the top 10 agents by CSAT`,
+  },
+  {
+    // "Metadata-Based" / signals: transparent keyword + metadata scoring, no LLM
+    // call. High-stakes + reasoning + math + multi-step signals drive the score.
+    // algos pinned to ["signals"] to show the pure metadata path.
+    group: "demo",
+    label: "📊 Metadata-Based — transparent rules",
+    baselineId: "claude-sonnet-4.5",
+    algos: ["signals"],
+    prompt: `A high-value customer disputes a $2,400 credit-card chargeback. Assess the fraud risk and financial-compliance exposure, weigh the evidence, then recommend whether to approve the refund or escalate to the fraud team — and explain your reasoning step by step.
+
+Customer: "J. Martins," account age 4 years 2 months
+Tier: High-value / Platinum (avg monthly spend $3,100, lifetime spend ~$148,000)
+Prior chargebacks: 0 in 4 years
+Prior disputes resolved amicably (2, both merchant-error refunds, no chargeback filed)
+
+Disputed Transaction
+
+Amount: $2,400
+Merchant: "Aurora Home Furnishings" (physical goods, custom order)
+Date of charge: June 2, 2026; dispute filed: July 10, 2026 (38 days later)
+Card-present or card-not-present: Card-not-present (online order)
+Delivery status: Merchant's system shows "delivered," signature captured
+Customer's claim: "Never received the item; signature isn't mine"
+
+Device & Behavioral Signals
+
+Transaction originated from a device/IP consistent with customer's usual login history
+No new shipping address added to account in prior 90 days
+No password reset, email change, or new device enrollment near time of purchase
+Billing address matches shipping address on file
+
+Merchant-Side Evidence
+
+Merchant provided: order confirmation, delivery carrier tracking, photo of package at doorstep, signature image
+Signature image is illegible/scrawled (common for doorstep delivery, low evidentiary value)
+No photo ID was checked at delivery (standard for this merchant's process)
+
+Compliance Flags
+
+Regulation: Reg E / Reg Z depending on card network rules (assume Visa credit card → Reg Z / card network chargeback rules apply, not Reg E)
+Card network chargeback reason code: 13.1 (Merchandise/Services Not Received)
+Bank's internal SLA: provisional credit decision due within 10 business days of dispute filing
+No OFAC/sanctions flags, no prior fraud-ring linkage on this account`,
+  },
+  {
+    // "Judged" / verdict: a cheap LLM scores complexity up front. This looks
+    // trivial to the keyword scorer but hides a reasoning trap, so the judge
+    // raises the score. algos pinned to ["verdict"]. Needs Bedrock creds; falls
+    // back to the metadata score if the judge call fails.
+    group: "demo",
+    label: "⚖️ Judged — an LLM scores complexity",
+    baselineId: "claude-sonnet-4.5",
+    algos: ["verdict"],
+    prompt: `A customer insists they were double-charged, but I see two different amounts on the same day: $30.00 and $30.50. Is this one duplicate charge or two separate transactions? Decide and explain briefly.`,
+  },
+  {
+    // "Timing" / tempo: prices flex-capable models at the 50% flex rate when
+    // there's latency headroom — the comparison table shows the FLEX −50%
+    // discount on flex-capable models. algos → ["tempo"].
+    group: "demo",
+    label: "⏱️ Timing — flex pricing on latency headroom",
+    baselineId: "nova-pro",
+    algos: ["tempo"],
+    prompt: `You are an evaluator comparing two auto-generated text summaries to determine how semantically and structurally similar they are.
+
+Summary A (Auto-Generated):
+"The quarterly sales report shows a 12% increase in revenue compared to last quarter, driven primarily by strong performance in the North American market. Customer retention improved slightly, while operating costs remained stable."
+
+Summary B (Agent-Populated):
+"Revenue rose by 12% this quarter versus the previous one, mainly due to solid results in North America. Customer retention saw a small improvement, and operating costs stayed steady."
+
+Task:
+Evaluate how similar Summary A and Summary B are. Consider the following dimensions:
+1. Semantic similarity (do they convey the same meaning/facts?)
+2. Structural similarity (sentence order, organization)
+3. Key data point consistency (numbers, percentages, named entities)
+4. Any omissions, additions, or contradictions between the two
+
+Provide:
+- An overall similarity score (0–100%)
+- A short explanation for the score
+- A list of any discrepancies found (if none, state "No discrepancies found")`,
+  },
 ];
 
 // The three cost/quality stances the user can pick. Each maps to a qualityPref
@@ -295,10 +391,6 @@ const ROUTING_ALGORITHMS: {
     active: true,
   },
 ];
-
-// Every active routing algorithm id. Used to (re)select all four options — both
-// as the initial state and whenever the prompt changes.
-const ALL_ALGO_IDS = ROUTING_ALGORITHMS.filter((x) => x.active).map((x) => x.id);
 
 // Long-form copy for the "Read more" about modal — the four strategies here
 // mirror ROUTING_ALGORITHMS above, written for a reader who wants the full
@@ -468,7 +560,9 @@ export default function Home() {
   // fuzzy-match history cache first; "verdict" ("Judged") runs a cheap LLM to
   // score complexity before value-based selection. Precedence: recall hit →
   // judge → metadata heuristic. "signals"/"tempo" are still cosmetic.
-  const [selectedAlgos, setSelectedAlgos] = useState<string[]>(ALL_ALGO_IDS);
+  const [selectedAlgos, setSelectedAlgos] = useState<string[]>(
+    ROUTING_ALGORITHMS.filter((x) => x.active).map((x) => x.id),
+  );
   const [hoveredAlgo, setHoveredAlgo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<RouteResult | null>(null);
@@ -497,10 +591,12 @@ export default function Home() {
     if (!ex) return;
     setPrompt(ex.prompt);
     setExampleLabel(label);
-    setSelectedAlgos(ALL_ALGO_IDS); // a prompt change re-enables all four algorithms
     // Preset the baseline to the model NiCE runs this task on in production, so
     // the savings/quality comparison reflects real current spend.
     setStandardId(ex.baselineId);
+    // Demo prompts pin the specific algorithm they showcase; any other prompt
+    // resets to the full (recommended) set of algorithms.
+    setSelectedAlgos(ex.algos ?? ROUTING_ALGORITHMS.filter((x) => x.active).map((x) => x.id));
     setResult(null);
     setError(null);
     setAnswers(null);
@@ -710,7 +806,6 @@ export default function Home() {
               onChange={(e) => {
                 setPrompt(e.target.value);
                 setExampleLabel(""); // typed prompt no longer matches an example
-                setSelectedAlgos(ALL_ALGO_IDS); // re-enable all four algorithms on any prompt change
               }}
               onKeyDown={async (e) => {
                 if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && prompt.trim() && !loading && !noAlgoSelected) {

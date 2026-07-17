@@ -5,7 +5,7 @@
     { "id": 2, "prompt": "Extract key insights from a customer support conversation.", "associated_model": "claude-sonnet-4.5" },
     { "id": 3, "prompt": "Generate Python unit tests.", "associated_model": "gemma-3-27b" },
     { "id": 4, "prompt": "Translate this text from English to French.", "associated_model": "gpt-oss-120b" },
-    { "id": 5, "prompt": "Write a SQL query to find the top 10 customers by revenue.", "associated_model": "gemma-3-27b" },
+    { "id": 5, "prompt": "Write a SQL query for the following user request: Find the top 10 agents by CSAT", "associated_model": "gpt-oss-120b" },
     { "id": 6, "prompt": "Draft a polite reply to a customer complaint email.", "associated_model": "claude-sonnet-4.5" },
     { "id": 7, "prompt": "Classify the sentiment of these product reviews.", "associated_model": "claude-sonnet-4.5" },
     { "id": 8, "prompt": "Explain this legal contract clause in plain language.", "associated_model": "claude-sonnet-4.5" },
