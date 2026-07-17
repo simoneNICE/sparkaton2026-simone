@@ -713,6 +713,7 @@ export default function Home() {
   // slider), so this is one re-run per change, not a burst.
   useEffect(() => {
     if (!hasResult.current) return;
+    if (selectedAlgos.length === 0) return; // nothing to route with — keep the last result
     runRoute().then((r) => {
       if (r) fetchAnswers(r);
     });
@@ -762,6 +763,9 @@ export default function Home() {
   // "Timing" (tempo) enabled -> flex-capable models are priced at the 50% flex
   // discount, so the comparison table flags which rows got it.
   const timingOn = selectedAlgos.includes("tempo");
+  // Routing needs at least one algorithm selected (Learned / Metadata / Judged /
+  // Timing) — disable the "Route prompt" action when none are checked.
+  const noAlgoSelected = selectedAlgos.length === 0;
 
   return (
     <>
@@ -876,7 +880,7 @@ export default function Home() {
                 setExampleLabel(""); // typed prompt no longer matches an example
               }}
               onKeyDown={async (e) => {
-                if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && prompt.trim() && !loading) {
+                if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && prompt.trim() && !loading && !noAlgoSelected) {
                   e.preventDefault();
                   scrollToResultsRef.current = true;
                   const r = await runRoute();
@@ -1062,16 +1066,20 @@ export default function Home() {
                 const r = await runRoute();
                 if (r) fetchAnswers(r);
               }}
-              disabled={loading || !prompt.trim()}
+              disabled={loading || !prompt.trim() || noAlgoSelected}
+              title={noAlgoSelected ? "Select at least one routing algorithm" : undefined}
               style={{
-                background: loading || !prompt.trim() ? "var(--panel-2)" : "var(--accent)",
-                color: loading || !prompt.trim() ? "var(--muted)" : "#ffffff",
+                background: loading || !prompt.trim() || noAlgoSelected ? "var(--panel-2)" : "var(--accent)",
+                color: loading || !prompt.trim() || noAlgoSelected ? "var(--muted)" : "#ffffff",
                 fontSize: 14,
                 fontWeight: 600,
-                border: loading || !prompt.trim() ? "1px solid var(--border)" : "1px solid var(--accent)",
+                border:
+                  loading || !prompt.trim() || noAlgoSelected
+                    ? "1px solid var(--border)"
+                    : "1px solid var(--accent)",
                 borderRadius: 8,
                 padding: "10px 24px",
-                cursor: loading || !prompt.trim() ? "default" : "pointer",
+                cursor: loading || !prompt.trim() || noAlgoSelected ? "default" : "pointer",
               }}
             >
               {loading ? "Routing…" : "Route prompt"}
