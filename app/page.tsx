@@ -289,12 +289,16 @@ const ROUTING_ALGORITHMS: {
   {
     id: "tempo",
     title: "Timing",
-    subtitle: "exploits latency headroom",
+    subtitle: "AWS Bedrock Flex tier",
     description:
-      "Routes based on the required response time: picks the cheapest model among those fast enough to meet the SLA.",
+      "For latency-tolerant requests, routes to AWS Bedrock's Flex inference tier — the same models at roughly 50% lower cost in exchange for higher, best-effort latency. Picks the cheapest Flex-eligible model that still meets the response-time SLA.",
     active: true,
   },
 ];
+
+// Every active routing algorithm id. Used to (re)select all four options — both
+// as the initial state and whenever the prompt changes.
+const ALL_ALGO_IDS = ROUTING_ALGORITHMS.filter((x) => x.active).map((x) => x.id);
 
 // Long-form copy for the "Read more" about modal — the four strategies here
 // mirror ROUTING_ALGORITHMS above, written for a reader who wants the full
@@ -318,7 +322,7 @@ const ABOUT_STRATEGIES: { icon: string; title: string; body: string }[] = [
   {
     icon: "⏱️",
     title: "Timing",
-    body: "Optimizes for latency by selecting the lowest-cost model capable of meeting the required response-time SLA, ensuring speed without paying for unnecessary performance.",
+    body: "Sends latency-tolerant requests to AWS Bedrock's Flex inference tier, which serves the same models at roughly 50% lower cost in exchange for higher, best-effort latency. It selects the lowest-cost Flex-eligible model that still meets the required response-time SLA — savings without paying for unnecessary speed.",
   },
 ];
 
@@ -464,9 +468,7 @@ export default function Home() {
   // fuzzy-match history cache first; "verdict" ("Judged") runs a cheap LLM to
   // score complexity before value-based selection. Precedence: recall hit →
   // judge → metadata heuristic. "signals"/"tempo" are still cosmetic.
-  const [selectedAlgos, setSelectedAlgos] = useState<string[]>(
-    ROUTING_ALGORITHMS.filter((x) => x.active).map((x) => x.id),
-  );
+  const [selectedAlgos, setSelectedAlgos] = useState<string[]>(ALL_ALGO_IDS);
   const [hoveredAlgo, setHoveredAlgo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<RouteResult | null>(null);
@@ -495,6 +497,7 @@ export default function Home() {
     if (!ex) return;
     setPrompt(ex.prompt);
     setExampleLabel(label);
+    setSelectedAlgos(ALL_ALGO_IDS); // a prompt change re-enables all four algorithms
     // Preset the baseline to the model NiCE runs this task on in production, so
     // the savings/quality comparison reflects real current spend.
     setStandardId(ex.baselineId);
@@ -707,6 +710,7 @@ export default function Home() {
               onChange={(e) => {
                 setPrompt(e.target.value);
                 setExampleLabel(""); // typed prompt no longer matches an example
+                setSelectedAlgos(ALL_ALGO_IDS); // re-enable all four algorithms on any prompt change
               }}
               onKeyDown={async (e) => {
                 if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && prompt.trim() && !loading && !noAlgoSelected) {
@@ -1090,7 +1094,7 @@ export default function Home() {
                           <td style={{ ...td, whiteSpace: "nowrap", width: "1%" }}>
                             {timingOn && c.model.flex && (
                               <span
-                                title="Flex pricing: 50% discount for latency headroom (Timing enabled)"
+                                title="AWS Bedrock Flex tier: ~50% lower cost in exchange for higher, best-effort latency"
                                 style={{
                                   display: "inline-flex",
                                   alignItems: "center",
