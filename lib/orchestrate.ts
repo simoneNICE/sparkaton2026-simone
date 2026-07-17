@@ -1,9 +1,11 @@
 import {
   MODEL_CATALOG,
   QUALITY_FIRST_SCORE,
+  WEIGHTS,
   affinityFloorFromScore,
   qualityBiasFromPref,
 } from "./config";
+import type { ScoringWeights } from "./config";
 import { assessComplexity } from "./scoring";
 import { tierForScore } from "./config";
 import { computeCost, dominantSkill, getNiceDefault, selectByValue } from "./router";
@@ -28,6 +30,14 @@ export interface RouteOptions {
   standardId?: string;
   // "Timing" enabled: price flex-capable models at their discounted flex rate.
   flex?: boolean;
+  // Dev-only tuning overrides (see the "Scoring & routing tuning" panel,
+  // app/page.tsx). Undefined in normal operation, so behaviour is unchanged.
+  tuning?: {
+    weights?: Partial<ScoringWeights>;
+    affinityBase?: number;
+    affinitySlope?: number;
+    qualityFirstScore?: number;
+  };
 }
 
 // Shared machinery: given a chosen model + assessment, build the cost
@@ -135,7 +145,7 @@ function routeFromAssessment(
   assessment: ComplexityAssessment,
   skillOverride?: Skill,
 ): Omit<RouteResult, "source" | "recall" | "judge"> {
-  const { providerPref = "any", qualityPref = 50, standardId, flex = false } = options;
+  const { providerPref = "any", qualityPref = 50, standardId, flex = false, tuning } = options;
 
   // Apply the quality/cost slider as a bias on the complexity score.
   const qualityBias = qualityBiasFromPref(qualityPref);
@@ -146,9 +156,12 @@ function routeFromAssessment(
     MODEL_CATALOG.find((m) => m.id === standardId) ?? getNiceDefault();
 
   const skill = skillOverride ?? dominantSkill(assessment);
-  const affinityFloor = affinityFloorFromScore(adjustedScore);
+  const affinityFloor = affinityFloorFromScore(adjustedScore, {
+    base: tuning?.affinityBase,
+    slope: tuning?.affinitySlope,
+  });
   // Hardest prompts flip to quality-first (strongest model), not cost-first.
-  const qualityFirst = adjustedScore >= QUALITY_FIRST_SCORE;
+  const qualityFirst = adjustedScore >= (tuning?.qualityFirstScore ?? QUALITY_FIRST_SCORE);
   const { selected: selectedModel, premium: premiumModel } = selectByValue(
     assessment.estInputTokens,
     assessment.estOutputTokens,
@@ -172,8 +185,15 @@ function routeFromAssessment(
   );
 }
 
+function assess(options: RouteOptions) {
+  const weights = options.tuning?.weights;
+  return weights
+    ? assessComplexity(options.prompt, { ...WEIGHTS, ...weights })
+    : assessComplexity(options.prompt);
+}
+
 export function route(options: RouteOptions): RouteResult {
-  const assessment = assessComplexity(options.prompt);
+  const assessment = assess(options);
   return { ...routeFromAssessment(options, assessment), source: "metadata" };
 }
 
@@ -183,7 +203,7 @@ export function route(options: RouteOptions): RouteResult {
 // returning the dominant skill. On any judge failure, degrades gracefully to the
 // ordinary metadata route rather than erroring the request.
 export async function routeWithJudge(options: RouteOptions): Promise<RouteResult> {
-  const assessment = assessComplexity(options.prompt);
+  const assessment = assess(options);
   const verdict = await judgeComplexity(options.prompt);
 
   if (!verdict) {
@@ -227,7 +247,7 @@ export async function routeWithRecall(
   if (options.useRecall) {
     const hit = tryRecall(options.prompt);
     if (hit) {
-      const assessment = assessComplexity(options.prompt);
+      const assessment = assess(options);
       const niceDefaultModel =
         MODEL_CATALOG.find((m) => m.id === options.standardId) ?? getNiceDefault();
       const skill = dominantSkill(assessment);

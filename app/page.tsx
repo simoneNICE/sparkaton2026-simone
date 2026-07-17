@@ -1,8 +1,44 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import type { RouteResult } from "@/lib/types";
-import { MODEL_CATALOG, NICE_DEFAULT_ID } from "@/lib/config";
+import {
+  MODEL_CATALOG,
+  NICE_DEFAULT_ID,
+  QUALITY_FIRST_SCORE as DEFAULT_QUALITY_FIRST_SCORE,
+  WEIGHTS as DEFAULT_WEIGHTS,
+} from "@/lib/config";
+import type { ScoringWeights } from "@/lib/config";
+import { useDebouncedEffect } from "@/lib/useDebouncedEffect";
+
+// Dev-only "Scoring & routing tuning" panel state — gated behind ?tune=1 /
+// ?debug=1 (see the `tuneEnabled` check in Home()). Undefined/absent means the
+// app behaves exactly as before: no tuning is ever sent to /api/route.
+interface TuningState {
+  weights: ScoringWeights;
+  affinityBase: number;
+  affinitySlope: number;
+  qualityFirstScore: number;
+}
+const DEFAULT_TUNING: TuningState = {
+  weights: { ...DEFAULT_WEIGHTS },
+  affinityBase: 0.35,
+  affinitySlope: 0.006,
+  qualityFirstScore: DEFAULT_QUALITY_FIRST_SCORE,
+};
+const TUNING_STORAGE_KEY = "sparkaton.tuning.v1";
+const WEIGHT_FIELDS: { key: keyof ScoringWeights; label: string }[] = [
+  { key: "code", label: "Code" },
+  { key: "reasoning", label: "Reasoning" },
+  { key: "math", label: "Math" },
+  { key: "structure", label: "Structure / constraints" },
+  { key: "length", label: "Input length" },
+  { key: "criticalDomain", label: "High-stakes domain" },
+  { key: "creativity", label: "Creativity (dampener)" },
+  { key: "simpleTask", label: "Mechanical task (dampener)" },
+  { key: "brevity", label: "Brevity (dampener)" },
+];
 
 // Shape returned by /api/answer — one real Bedrock answer per model, with a
 // per-model error field so one failure never blanks the other column.
@@ -552,6 +588,40 @@ const sectionKicker: React.CSSProperties = {
 };
 
 export default function Home() {
+  return (
+    <Suspense fallback={null}>
+      <HomeInner />
+    </Suspense>
+  );
+}
+
+function HomeInner() {
+  const searchParams = useSearchParams();
+  const tuneEnabled = searchParams.get("tune") === "1" || searchParams.get("debug") === "1";
+
+  const [tuning, setTuning] = useState<TuningState>(DEFAULT_TUNING);
+
+  // Load persisted tuning values once, only when the panel is actually active.
+  useEffect(() => {
+    if (!tuneEnabled) return;
+    try {
+      const raw = window.localStorage.getItem(TUNING_STORAGE_KEY);
+      if (raw) setTuning({ ...DEFAULT_TUNING, ...JSON.parse(raw) });
+    } catch {
+      // ignore malformed/absent storage
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tuneEnabled]);
+
+  useEffect(() => {
+    if (!tuneEnabled) return;
+    try {
+      window.localStorage.setItem(TUNING_STORAGE_KEY, JSON.stringify(tuning));
+    } catch {
+      // ignore storage failures (e.g. private browsing quota)
+    }
+  }, [tuneEnabled, tuning]);
+
   const [prompt, setPrompt] = useState(EXAMPLES[0].prompt);
   const [exampleLabel, setExampleLabel] = useState(EXAMPLES[0].label);
   const [standardId, setStandardId] = useState<string>(NICE_DEFAULT_ID);
@@ -618,7 +688,13 @@ export default function Home() {
       const res = await fetch("/api/route", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, standardId, qualityPref: q, algos: selectedAlgos }),
+        body: JSON.stringify({
+          prompt,
+          standardId,
+          qualityPref: q,
+          algos: selectedAlgos,
+          ...(tuneEnabled ? { tuning } : {}),
+        }),
       });
       const data = await readJson(res);
       if (!res.ok) throw new Error(data.error || "Request failed");
@@ -639,14 +715,18 @@ export default function Home() {
   // the "Real model answers" section stays in sync instead of falling back to
   // "Not yet run". These are discrete dropdown/checkbox changes (no continuous
   // slider), so this is one re-run per change, not a burst.
-  useEffect(() => {
-    if (!hasResult.current) return;
-    if (selectedAlgos.length === 0) return; // nothing to route with — keep the last result
-    runRoute().then((r) => {
-      if (r) fetchAnswers(r);
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [qualityPref, standardId, selectedAlgos]);
+  useDebouncedEffect(
+    () => {
+      if (!hasResult.current) return;
+      if (selectedAlgos.length === 0) return; // nothing to route with — keep the last result
+      runRoute().then((r) => {
+        if (r) fetchAnswers(r);
+      });
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    },
+    [qualityPref, standardId, selectedAlgos, tuning],
+    500,
+  );
 
   // Jump to the results after an explicit "Route prompt" click (not on the
   // live re-route above, which happens while the user is still in settings).
@@ -975,6 +1055,10 @@ export default function Home() {
             </div>
 
           </div>
+
+          {tuneEnabled && (
+            <TuningPanel tuning={tuning} setTuning={setTuning} result={result} />
+          )}
 
           {/* Route prompt — the primary action, at the very end of the flow */}
           <div
@@ -1597,6 +1681,135 @@ function ContribRow({ c }: { c: { label: string; points: number; weight: number;
         {c.points}
       </div>
       <div style={{ width: 220, fontSize: 11, color: "var(--muted)" }}>{c.evidence}</div>
+    </div>
+  );
+}
+
+// Dev-only panel (gated behind ?tune=1 / ?debug=1) for live-tuning the scorer
+// and router: per-key scoring weights, the affinity-floor curve, and the
+// quality-first threshold. Shows the live effect (selected model, dominant
+// skill, adjusted score, affinity floor) so the tuning loop is immediate.
+function TuningPanel({
+  tuning,
+  setTuning,
+  result,
+}: {
+  tuning: TuningState;
+  setTuning: React.Dispatch<React.SetStateAction<TuningState>>;
+  result: RouteResult | null;
+}) {
+  const numberInput: React.CSSProperties = { ...fieldControl, padding: "6px 8px", fontSize: 13 };
+
+  return (
+    <div style={{ marginTop: 24, ...panel, padding: 16, borderStyle: "dashed" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <div style={sectionKicker}>Scoring &amp; routing tuning (dev only)</div>
+        <button
+          onClick={() => setTuning(DEFAULT_TUNING)}
+          style={{
+            fontSize: 12,
+            fontWeight: 600,
+            color: "var(--accent)",
+            background: "none",
+            border: "1px solid var(--accent)",
+            borderRadius: 8,
+            padding: "4px 10px",
+            cursor: "pointer",
+          }}
+        >
+          Reset to defaults
+        </button>
+      </div>
+
+      {result && (
+        <div
+          style={{
+            display: "flex",
+            gap: 16,
+            flexWrap: "wrap",
+            fontSize: 12,
+            color: "var(--muted)",
+            marginBottom: 16,
+            padding: "8px 10px",
+            background: "var(--panel-2)",
+            borderRadius: 8,
+          }}
+        >
+          <span>
+            Selected: <strong style={{ color: "var(--text)" }}>{result.selected.model.displayName}</strong>
+          </span>
+          <span>
+            Dominant skill: <strong style={{ color: "var(--text)" }}>{result.dominantSkill}</strong>
+          </span>
+          <span>
+            Adjusted score: <strong style={{ color: "var(--text)" }}>{result.adjustedScore}</strong>
+          </span>
+          <span>
+            Affinity floor used: <strong style={{ color: "var(--text)" }}>{result.affinityFloor.toFixed(2)}</strong>
+          </span>
+        </div>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+        {WEIGHT_FIELDS.map((f) => (
+          <div key={f.key}>
+            <label style={{ ...fieldLabel, fontSize: 12, marginBottom: 4 }}>
+              {f.label} <span style={{ color: "var(--muted)", fontWeight: 400 }}>(default {DEFAULT_WEIGHTS[f.key]})</span>
+            </label>
+            <input
+              type="number"
+              value={tuning.weights[f.key]}
+              onChange={(e) =>
+                setTuning((t) => ({
+                  ...t,
+                  weights: { ...t.weights, [f.key]: Number(e.target.value) },
+                }))
+              }
+              style={numberInput}
+            />
+          </div>
+        ))}
+      </div>
+
+      <div style={{ borderTop: "1px solid var(--border)", margin: "16px 0" }} />
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+        <div>
+          <label style={{ ...fieldLabel, fontSize: 12, marginBottom: 4 }}>
+            Affinity floor — base <span style={{ color: "var(--muted)", fontWeight: 400 }}>(default {DEFAULT_TUNING.affinityBase})</span>
+          </label>
+          <input
+            type="number"
+            step="0.01"
+            value={tuning.affinityBase}
+            onChange={(e) => setTuning((t) => ({ ...t, affinityBase: Number(e.target.value) }))}
+            style={numberInput}
+          />
+        </div>
+        <div>
+          <label style={{ ...fieldLabel, fontSize: 12, marginBottom: 4 }}>
+            Affinity floor — slope <span style={{ color: "var(--muted)", fontWeight: 400 }}>(default {DEFAULT_TUNING.affinitySlope})</span>
+          </label>
+          <input
+            type="number"
+            step="0.001"
+            value={tuning.affinitySlope}
+            onChange={(e) => setTuning((t) => ({ ...t, affinitySlope: Number(e.target.value) }))}
+            style={numberInput}
+          />
+        </div>
+        <div>
+          <label style={{ ...fieldLabel, fontSize: 12, marginBottom: 4 }}>
+            Quality-first score <span style={{ color: "var(--muted)", fontWeight: 400 }}>(default {DEFAULT_QUALITY_FIRST_SCORE})</span>
+          </label>
+          <input
+            type="number"
+            value={tuning.qualityFirstScore}
+            onChange={(e) => setTuning((t) => ({ ...t, qualityFirstScore: Number(e.target.value) }))}
+            style={numberInput}
+          />
+        </div>
+      </div>
     </div>
   );
 }

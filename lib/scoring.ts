@@ -5,6 +5,7 @@ import {
   estimateTokens,
   tierForScore,
 } from "./config";
+import type { ScoringWeights } from "./config";
 import type { ComplexityAssessment, FeatureContribution } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -224,7 +225,10 @@ function detectStructure(prompt: string, lower: string): { signal: number; evide
   };
 }
 
-export function assessComplexity(promptRaw: string): ComplexityAssessment {
+export function assessComplexity(
+  promptRaw: string,
+  weights: ScoringWeights = WEIGHTS,
+): ComplexityAssessment {
   const prompt = promptRaw.trim();
   const lower = prompt.toLowerCase();
 
@@ -251,15 +255,15 @@ export function assessComplexity(promptRaw: string): ComplexityAssessment {
   // Rank the three correlated hard skills and discount the weaker ones so a
   // multi-skill prompt doesn't triple-count. Ranking is by raw (signal*weight).
   const hard = [
-    { key: "code", label: "Code / programming", signal: code.signal, base: WEIGHTS.code, evidence: code.evidence },
+    { key: "code", label: "Code / programming", signal: code.signal, base: weights.code, evidence: code.evidence },
     {
       key: "reasoning",
       label: "Reasoning required",
       signal: reasoningSignal,
-      base: WEIGHTS.reasoning,
+      base: weights.reasoning,
       evidence: reasoning.count ? `keywords: ${reasoning.hits.slice(0, 4).join(", ")}` : "none",
     },
-    { key: "math", label: "Math / logic", signal: math.signal, base: WEIGHTS.math, evidence: math.evidence },
+    { key: "math", label: "Math / logic", signal: math.signal, base: weights.math, evidence: math.evidence },
   ];
   const rankOrder = [...hard].sort((a, b) => b.signal * b.base - a.signal * a.base);
   const discountFor = new Map<string, number>();
@@ -277,12 +281,12 @@ export function assessComplexity(promptRaw: string): ComplexityAssessment {
 
   // --- structure / multi-step / constraints ---
   const structure = detectStructure(prompt, lower);
-  add("structure", "Structure / constraints", structure.signal, WEIGHTS.structure, structure.evidence);
+  add("structure", "Structure / constraints", structure.signal, weights.structure, structure.evidence);
 
   // --- length / context ---
   const tokens = estimateTokens(prompt);
   const lengthSignal = saturate(tokens, 1500); // ~1500 tokens -> full
-  add("length", "Input length", lengthSignal, WEIGHTS.length, `~${tokens} tokens`);
+  add("length", "Input length", lengthSignal, weights.length, `~${tokens} tokens`);
 
   // --- critical domain (gated) ---
   // A domain word alone isn't a high-stakes *task* — "what is GDPR?" is trivia.
@@ -296,7 +300,7 @@ export function assessComplexity(promptRaw: string): ComplexityAssessment {
     "criticalDomain",
     "High-stakes domain",
     criticalSignal,
-    WEIGHTS.criticalDomain,
+    weights.criticalDomain,
     critical.count
       ? `domain: ${critical.hits.slice(0, 3).join(", ")}${criticalHasContext ? "" : " (mention only)"}`
       : "none",
@@ -309,7 +313,7 @@ export function assessComplexity(promptRaw: string): ComplexityAssessment {
     "creativity",
     "Open creative writing",
     creativeSignal,
-    WEIGHTS.creativity,
+    weights.creativity,
     creative.count ? `creative task: ${creative.hits.slice(0, 3).join(", ")}` : "none",
   );
 
@@ -323,7 +327,7 @@ export function assessComplexity(promptRaw: string): ComplexityAssessment {
     "simpleTask",
     "Mechanical task",
     simpleSignal,
-    WEIGHTS.simpleTask,
+    weights.simpleTask,
     simple.count ? `cheap task: ${simple.hits.slice(0, 3).join(", ")}` : "none",
   );
 
@@ -339,7 +343,7 @@ export function assessComplexity(promptRaw: string): ComplexityAssessment {
     "brevity",
     "Brevity requested",
     brevitySignal,
-    WEIGHTS.brevity,
+    weights.brevity,
     brevity.count
       ? substantialTask
         ? `mention only: ${brevity.hits.slice(0, 2).join(", ")} (task isn't brief)`
