@@ -20,11 +20,9 @@ export async function POST(req: Request) {
     const useRecall: boolean = algos.includes("recall");
     const useJudge: boolean = algos.includes("verdict");
     const flex: boolean = algos.includes("tempo");
-    const judgeModelId: string | undefined =
-      typeof body.judgeModelId === "string" ? body.judgeModelId : undefined;
 
     const result = await routeWithRecall({
-      prompt, providerPref, qualityPref, standardId, useRecall, useJudge, judgeModelId, flex,
+      prompt, providerPref, qualityPref, standardId, useRecall, useJudge, flex,
     });
     return NextResponse.json(result);
   } catch (e) {

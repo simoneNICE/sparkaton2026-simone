@@ -503,13 +503,6 @@ const ABOUT_STRATEGIES: { icon: string; title: string; body: string }[] = [
   },
 ];
 
-// Cheap (tier-1) models eligible to run the "Judged" complexity classifier.
-// Sorted cheapest-first by a rough blended price so the dropdown leads with the
-// lowest-cost judge. Kept in sync with lib/config.ts cheapModelIds() (tier 1).
-const CHEAP_JUDGE_MODELS = MODEL_CATALOG.filter((m) => m.tier === 1).sort(
-  (a, b) => a.inputCostPer1M + a.outputCostPer1M - (b.inputCostPer1M + b.outputCostPer1M),
-);
-
 const TIER_LABEL: Record<number, string> = {
   1: "Economy",
   2: "Standard",
@@ -648,9 +641,6 @@ export default function Home() {
   const [exampleLabel, setExampleLabel] = useState(EXAMPLES[0].label);
   const [standardId, setStandardId] = useState<string>(NICE_DEFAULT_ID);
   const [qualityPref, setQualityPref] = useState(50);
-  // Which cheap (tier-1) model runs the "Judged" complexity classifier. Only
-  // matters when "verdict" is selected. Defaults to Nova Micro (server default).
-  const [judgeModelId, setJudgeModelId] = useState<string>("nova-micro");
   // Which routing algorithms are selected. "recall" ("Learned") checks the
   // fuzzy-match history cache first; "verdict" ("Judged") runs a cheap LLM to
   // score complexity before value-based selection. Precedence: recall hit →
@@ -700,7 +690,7 @@ export default function Home() {
       const res = await fetch("/api/route", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, standardId, qualityPref: q, algos: selectedAlgos, judgeModelId }),
+        body: JSON.stringify({ prompt, standardId, qualityPref: q, algos: selectedAlgos }),
       });
       const data = await readJson(res);
       if (!res.ok) throw new Error(data.error || "Request failed");
@@ -727,7 +717,7 @@ export default function Home() {
       if (r) fetchAnswers(r);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [qualityPref, standardId, selectedAlgos, judgeModelId]);
+  }, [qualityPref, standardId, selectedAlgos]);
 
   // Jump to the results after an explicit "Route prompt" click (not on the
   // live re-route above, which happens while the user is still in settings).
@@ -1052,42 +1042,6 @@ export default function Home() {
               })}
             </div>
 
-            {/* Judge model picker — only relevant when "Judged" is selected.
-                Restricted to cheap (tier-1) models: a judge must cost far less
-                than what it routes to. */}
-            {selectedAlgos.includes("verdict") && (
-              <div style={{ marginTop: 12 }}>
-                <label style={{ ...fieldLabel, fontSize: 12 }} htmlFor="judge-model">
-                  ⚖️ Judge model <span style={{ color: "var(--muted)", fontWeight: 400 }}>(cheap models only)</span>
-                </label>
-                <select
-                  id="judge-model"
-                  value={judgeModelId}
-                  onChange={(e) => setJudgeModelId(e.target.value)}
-                  style={{
-                    marginTop: 4,
-                    width: "100%",
-                    maxWidth: 360,
-                    padding: "8px 10px",
-                    borderRadius: 8,
-                    border: "1px solid var(--border)",
-                    background: "var(--panel)",
-                    color: "var(--text)",
-                    fontSize: 13,
-                    cursor: "pointer",
-                  }}
-                >
-                  {CHEAP_JUDGE_MODELS.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.displayName} — ${m.inputCostPer1M}/{m.outputCostPer1M} per 1M in/out
-                    </option>
-                  ))}
-                </select>
-                <p style={{ fontSize: 12, color: "var(--muted)", margin: "6px 0 0" }}>
-                  The cheap model that reads the prompt and scores its complexity before routing.
-                </p>
-              </div>
-            )}
           </div>
 
           {/* Route prompt — the primary action, at the very end of the flow */}

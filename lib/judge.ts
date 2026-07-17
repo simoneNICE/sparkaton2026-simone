@@ -14,23 +14,17 @@
 // cached verdict instead of firing a fresh (paid) Bedrock call on every drag.
 // ---------------------------------------------------------------------------
 
-import { MODEL_CATALOG, cheapModelIds } from "./config";
+import { MODEL_CATALOG } from "./config";
 import { invokeBedrock, isBedrockSupported } from "./bedrock";
 import type { Skill } from "./types";
 
-// The default model that does the judging when the caller doesn't pick one.
-// Cheap by design; override per deployment. Nova Micro is a good default.
-const DEFAULT_JUDGE_MODEL_ID = process.env.JUDGE_MODEL_ID?.trim() || "nova-micro";
+// The judge model is locked to Claude 4.5 Haiku — not user- or
+// caller-selectable, so a client can never make us judge with a different
+// (potentially more expensive) model.
+const JUDGE_MODEL_ID = "claude-haiku-4.5";
 
-// Resolve the judge model: honor a caller-requested id only if it's a cheap
-// (tier-1) Bedrock-supported model — so a client can never make us judge with an
-// expensive model — otherwise fall back to the default.
-function resolveJudgeModel(requestedId?: string): string | null {
-  const cheap = cheapModelIds();
-  if (requestedId && cheap.includes(requestedId) && isBedrockSupported(requestedId)) {
-    return requestedId;
-  }
-  return isBedrockSupported(DEFAULT_JUDGE_MODEL_ID) ? DEFAULT_JUDGE_MODEL_ID : null;
+function resolveJudgeModel(): string | null {
+  return isBedrockSupported(JUDGE_MODEL_ID) ? JUDGE_MODEL_ID : null;
 }
 
 export interface JudgeVerdict {
@@ -110,12 +104,11 @@ function cacheSet(key: string, value: JudgeVerdict): void {
 // failure must degrade the request, never break it.
 export async function judgeComplexity(
   prompt: string,
-  requestedModelId?: string,
 ): Promise<JudgeVerdict | null> {
   const trimmed = prompt.trim();
   if (!trimmed) return null;
 
-  const judgeId = resolveJudgeModel(requestedModelId);
+  const judgeId = resolveJudgeModel();
   if (!judgeId) return null;
 
   const key = `${judgeId}::${trimmed}`;

@@ -27,10 +27,6 @@ export interface RouteOptions {
   standardId?: string;
   // "Timing" enabled: price flex-capable models at their discounted flex rate.
   flex?: boolean;
-
-  // For the "Judged" path: which cheap model scores complexity. Ignored unless
-  // it's a cheap (tier-1) Bedrock-supported id; otherwise the judge default wins.
-  judgeModelId?: string;
 }
 
 // Shared machinery: given a chosen model + assessment, build the cost
@@ -184,7 +180,7 @@ export function route(options: RouteOptions): RouteResult {
 // ordinary metadata route rather than erroring the request.
 export async function routeWithJudge(options: RouteOptions): Promise<RouteResult> {
   const assessment = assessComplexity(options.prompt);
-  const verdict = await judgeComplexity(options.prompt, options.judgeModelId);
+  const verdict = await judgeComplexity(options.prompt);
 
   if (!verdict) {
     // Judge unavailable / failed — fall back to the transparent heuristic.
