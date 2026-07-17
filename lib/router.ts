@@ -114,6 +114,10 @@ export function selectByValue(
   // When true, flex-capable models are priced at the discount, so the cost-first
   // pick reflects the cheaper flex rate (a flex model may now win on price).
   flex = false,
+  // When true (hardest prompts, score >= QUALITY_FIRST_SCORE), skip the
+  // cost-first logic and take the STRONGEST model on the skill outright — so a
+  // frontier model actually gets used, not just offered as a premium upgrade.
+  qualityFirst = false,
 ): { selected: ModelSpec; premium: ModelSpec | null } {
   let pool = MODEL_CATALOG;
   if (providerPref && providerPref !== "any") {
@@ -124,20 +128,28 @@ export function selectByValue(
   const cap = (m: ModelSpec) => m.capabilities[skill];
   const price = (m: ModelSpec) => computeCost(m, inputTokens, outputTokens, flex).totalCost;
 
-  // Models that clear the quality floor for this task. If none do (floor above
-  // every model), fall back to the most capable model(s) available.
-  let qualified = pool.filter((m) => cap(m) >= floor);
-  if (!qualified.length) {
-    const best = Math.max(...pool.map(cap));
-    qualified = pool.filter((m) => cap(m) === best);
+  // Strongest model on this skill (ties broken by cheaper price). Reused below.
+  const strongest = [...pool].sort((a, b) => cap(b) - cap(a) || price(a) - price(b))[0];
+
+  // Quality-first path: the task is hard enough that we go straight to the best
+  // model instead of the cheapest good-enough one. No premium upsell — we're
+  // already at the top.
+  if (qualityFirst) {
+    return { selected: strongest, premium: null };
   }
 
-  // Cost-first: cheapest good-enough model (ties broken by higher capability).
+  // Cost-first path (default). Models that clear the quality floor for this task;
+  // if none do (floor above every model), fall back to the most capable.
+  let qualified = pool.filter((m) => cap(m) >= floor);
+  if (!qualified.length) {
+    qualified = pool.filter((m) => cap(m) === cap(strongest));
+  }
+
+  // Cheapest good-enough model (ties broken by higher capability).
   const selected = [...qualified].sort((a, b) => price(a) - price(b) || cap(b) - cap(a))[0];
 
   // Premium option = strongest model overall on this skill, surfaced only when
   // it's a real "worth it?" upgrade over the auto pick.
-  const strongest = [...pool].sort((a, b) => cap(b) - cap(a) || price(a) - price(b))[0];
   const premium =
     cap(strongest) - cap(selected) >= PREMIUM_MIN_CAP_GAIN &&
     price(strongest) >= price(selected) * PREMIUM_MIN_COST_RATIO

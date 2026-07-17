@@ -12,8 +12,17 @@ export interface OneAnswer {
   usage?: { inputTokens: number; outputTokens: number; totalTokens: number };
   latencyMs?: number;
   bedrockModelId?: string;
+  stopReason?: string;
   error?: string;
 }
+
+// Output-token budget for the real comparison call. Generous on purpose:
+// "reasoning" models (e.g. GPT-OSS) spend a large chunk of their output on an
+// internal chain-of-thought before the final answer — with a tight cap they hit
+// the token limit mid-reasoning and return NO answer text at all. maxTokens is a
+// ceiling, not a target, so non-reasoning models still stop early at end_turn
+// and this doesn't inflate their cost.
+const ANSWER_MAX_TOKENS = 4096;
 
 // Run a single model, converting any failure into an error field instead of
 // throwing — so one model being unavailable never blanks out the other column.
@@ -22,13 +31,34 @@ async function runOne(modelId: string, prompt: string): Promise<OneAnswer> {
     return { modelId, error: `Model "${modelId}" is not mapped to Bedrock` };
   }
   try {
-    const r = await invokeBedrock({ modelId, prompt, maxTokens: 1024 });
+    const r = await invokeBedrock({ modelId, prompt, maxTokens: ANSWER_MAX_TOKENS });
+
+    // A real (paid) call that comes back with no answer text used to render as
+    // "Not run yet." — indistinguishable from never having run. Surface WHY:
+    // usually a reasoning model that exhausted the token budget before the
+    // final answer (stopReason "max_tokens"), sometimes an empty completion.
+    let error: string | undefined;
+    if (!r.text) {
+      if (r.stopReason === "max_tokens") {
+        error =
+          `No answer returned: hit the ${ANSWER_MAX_TOKENS}-token output limit` +
+          (r.reasoningText ? " while still reasoning" : "") +
+          ". This is a reasoning model — try a shorter prompt or a higher budget.";
+      } else if (r.reasoningText) {
+        error = "Model returned reasoning but no final answer.";
+      } else {
+        error = "Model returned an empty response.";
+      }
+    }
+
     return {
       modelId,
       text: r.text,
       usage: r.usage,
       latencyMs: r.latencyMs,
       bedrockModelId: r.bedrockModelId,
+      stopReason: r.stopReason,
+      error,
     };
   } catch (e) {
     const name = e instanceof Error ? e.name : "Error";

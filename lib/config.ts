@@ -71,21 +71,40 @@ export interface ScoringWeights {
   code: number;
   reasoning: number;
   math: number;
-  multiStep: number;
+  structure: number; // multi-step / constraints (was "multiStep")
   length: number;
   criticalDomain: number;
-  creativity: number;
+  creativity: number; // dampener
+  simpleTask: number; // dampener — mechanical/cheap tasks (translate, summarize…)
+  brevity: number; // dampener — explicit short-answer requests
 }
 
+// Max points each dimension can add to the 0..100 score. Positive dimensions
+// raise required capability; negative ones (dampeners) lower it. The positive
+// weights deliberately sum to > 100: no single dimension can carry a prompt to
+// the top, and the aggregate is clamped to 100 only at the genuinely-hard
+// extreme — so the useful mid-band (20..70) keeps its resolution instead of
+// everything piling up at 100.
 export const WEIGHTS: ScoringWeights = {
-  code: 30,
-  reasoning: 26,
-  math: 22,
-  multiStep: 15,
+  code: 32,
+  reasoning: 28,
+  math: 26,
+  structure: 14,
   length: 10,
-  criticalDomain: 24, // high-stakes domains must not fall to the cheap tier
+  criticalDomain: 22, // high-stakes domains must not fall to the cheap tier
   creativity: -12,
+  simpleTask: -20,
+  brevity: -6,
 };
+
+// The three "hard skill" dimensions (code / reasoning / math) are correlated:
+// a task needing two of them is NOT twice as hard as the harder one, so summing
+// them at full weight double-counts and inflates the score. To fix this while
+// keeping the explainability bars additive (points still sum to the score), we
+// rank the hard skills by contribution and discount the weaker ones: the
+// dominant skill keeps full weight, the second gets half, the third a quarter.
+export const HARD_SKILL_KEYS = ["code", "reasoning", "math"] as const;
+export const HARD_SKILL_DISCOUNTS = [1, 0.5, 0.25] as const;
 
 // ---------------------------------------------------------------------------
 // Score -> tier thresholds. Applied to the *adjusted* score (raw + quality bias).
@@ -132,19 +151,19 @@ export function capabilityToleranceFromPref(pref: number): number {
 
 // Complexity score -> minimum affinity (0..1) the task needs on its dominant
 // skill. This is the quality FLOOR for value-based routing: the router then
-// picks the CHEAPEST model in the whole catalog that clears this bar, so cost
-// is favored and stronger (pricier) models are used only when the task needs
-// them. Easy tasks get a low floor (cheap models qualify); hard tasks a higher
-// one. Capped at 0.92 so that a cheap-but-strong open model can still clear it —
-// the top proprietary models stay reserved for the premium (approval) path.
-// The adjustedScore already carries the Cost/Balanced/Quality lean (via the
-// quality bias), so this single curve serves all three modes:
-//   score 0 -> 0.40   score 50 -> 0.66   score 100 -> 0.92
-// The low base (0.40) lets Cost mode reach the very cheapest models on easy
-// tasks; the 0.92 cap lets Quality mode require a top model on hard ones.
+// picks the CHEAPEST model that clears this bar, so cost is favored and pricier
+// models are used only when the task needs them. Easy tasks get a low floor
+// (cheap models qualify); hard tasks a high one. The curve is steep on purpose:
+// near the top it climbs ABOVE the strongest open model's capability, so
+// genuinely hard / Quality-lean prompts stop qualifying cheap models and are
+// pushed onto a frontier model. Without this, "cheapest good-enough" almost
+// always lands on a cheap open model and the strong tiers never auto-select.
+// The adjustedScore already carries the Cost/Balanced/Quality lean, so one curve
+// serves all three modes:
+//   score 0 -> 0.35   score 50 -> 0.65   score 100 -> 0.95
 export function affinityFloorFromScore(score: number): number {
   const clamped = Math.max(0, Math.min(100, score));
-  return Math.round((0.4 + clamped * 0.0052) * 100) / 100;
+  return Math.round((0.35 + clamped * 0.006) * 100) / 100;
 }
 
 // A premium upgrade is only surfaced (as an approval-gated option) when the
@@ -155,6 +174,13 @@ export const PREMIUM_MIN_CAP_GAIN = 0.04;
 // And only when it costs at least this much more, so the "worth it?" decision is
 // real. A small premium that's barely pricier is just auto-taken.
 export const PREMIUM_MIN_COST_RATIO = 1.15;
+
+// At or above this adjusted score the router flips from cost-first to
+// quality-first: the hardest prompts auto-select the STRONGEST model on the
+// dominant skill (not merely the cheapest that clears the floor), so frontier
+// models are actually used on the work that needs them — not just offered as an
+// optional upgrade. Below it, the normal value-based (cost-first) logic runs.
+export const QUALITY_FIRST_SCORE = 85;
 
 // Rough token estimate: ~4 chars per token.
 export function estimateTokens(text: string): number {

@@ -122,6 +122,11 @@ export interface BedrockUsage {
 
 export interface BedrockInvokeResult {
   text: string;
+  // Chain-of-thought emitted by "reasoning" models (GPT-OSS, some others) in a
+  // separate `reasoningContent` block. Kept apart from the answer `text`; used
+  // for diagnostics when a model spends its whole token budget reasoning and
+  // never reaches the final answer.
+  reasoningText: string;
   usage: BedrockUsage;
   stopReason?: string;
   // The concrete Bedrock model id actually invoked (after resolution).
@@ -129,7 +134,7 @@ export interface BedrockInvokeResult {
   latencyMs: number;
 }
 
-const DEFAULTS = { maxTokens: 1024, temperature: 0.3 };
+const DEFAULTS = { maxTokens: 4096, temperature: 0.3 };
 
 // Build the Converse inferenceConfig. IMPORTANT: some Bedrock models reject a
 // request that sets BOTH temperature and topP ("`temperature` and `top_p`
@@ -166,14 +171,29 @@ export async function invokeBedrock(
 
   const res = await client.send(command);
 
-  const text =
-    res.output?.message?.content
-      ?.map((block) => ("text" in block ? block.text : ""))
-      .join("")
-      .trim() ?? "";
+  // Reasoning models return TWO kinds of content block: the final answer as a
+  // `text` block, and their chain-of-thought as a `reasoningContent` block. The
+  // old code only read `text` blocks, so a model that hit the token cap while
+  // still reasoning (no `text` block yet) came back empty. Collect both.
+  let text = "";
+  let reasoningText = "";
+  for (const block of res.output?.message?.content ?? []) {
+    if ("text" in block && typeof block.text === "string") {
+      text += block.text;
+    } else if (
+      "reasoningContent" in block &&
+      block.reasoningContent &&
+      "reasoningText" in block.reasoningContent
+    ) {
+      reasoningText += block.reasoningContent.reasoningText?.text ?? "";
+    }
+  }
+  text = text.trim();
+  reasoningText = reasoningText.trim();
 
   return {
     text,
+    reasoningText,
     usage: {
       inputTokens: res.usage?.inputTokens ?? 0,
       outputTokens: res.usage?.outputTokens ?? 0,
