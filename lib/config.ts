@@ -29,13 +29,17 @@ export const MODEL_CATALOG: ModelSpec[] = [
   // --- Google (Gemma, open weights) — the weakest per tier; decent multilingual ---
   // flex: true — these appear on the flex-pricing list, so they get the 50%
   // "Timing" discount (see FLEX_DISCOUNT).
-  { id: "gemma-3-4b",  displayName: "Gemma 3 4B",  provider: "google", tier: 1, inputCostPer1M: 0.02, outputCostPer1M: 0.04, flex: true, capabilities: { code: 0.28, reasoning: 0.32, math: 0.30, general: 0.42 } },
-  { id: "gemma-3-12b", displayName: "Gemma 3 12B", provider: "google", tier: 1, inputCostPer1M: 0.05, outputCostPer1M: 0.10, flex: true, capabilities: { code: 0.44, reasoning: 0.48, math: 0.46, general: 0.54 } },
-  { id: "gemma-3-27b", displayName: "Gemma 3 27B", provider: "google", tier: 2, inputCostPer1M: 0.10, outputCostPer1M: 0.20, flex: true, capabilities: { code: 0.58, reasoning: 0.62, math: 0.58, general: 0.68 } },
+  // Gemma is genuinely weak on HARD reasoning/math (AA Index 10; GPQA 42%;
+  // AIME 21%) but fine on everyday/general tasks — so only math/reasoning are
+  // nudged down here; code/general are left as-is.
+  { id: "gemma-3-4b",  displayName: "Gemma 3 4B",  provider: "google", tier: 1, inputCostPer1M: 0.02, outputCostPer1M: 0.04, flex: true, capabilities: { code: 0.28, reasoning: 0.28, math: 0.24, general: 0.42 } },
+  { id: "gemma-3-12b", displayName: "Gemma 3 12B", provider: "google", tier: 1, inputCostPer1M: 0.05, outputCostPer1M: 0.10, flex: true, capabilities: { code: 0.44, reasoning: 0.44, math: 0.40, general: 0.54 } },
+  { id: "gemma-3-27b", displayName: "Gemma 3 27B", provider: "google", tier: 2, inputCostPer1M: 0.10, outputCostPer1M: 0.20, flex: true, capabilities: { code: 0.55, reasoning: 0.54, math: 0.48, general: 0.68 } },
 
   // --- OpenAI (GPT-OSS, open weights) — code specialist ---
+  // GPT-OSS 120B has elite olympiad-level math (AIME'25 91.6%) — math nudged up.
   { id: "gpt-oss-20b",  displayName: "GPT-OSS 20B",  provider: "openai", tier: 1, inputCostPer1M: 0.05, outputCostPer1M: 0.20, flex: true, capabilities: { code: 0.70, reasoning: 0.64, math: 0.62, general: 0.62 } },
-  { id: "gpt-oss-120b", displayName: "GPT-OSS 120B", provider: "openai", tier: 2, inputCostPer1M: 0.15, outputCostPer1M: 0.60, flex: true, capabilities: { code: 0.86, reasoning: 0.84, math: 0.82, general: 0.82 } },
+  { id: "gpt-oss-120b", displayName: "GPT-OSS 120B", provider: "openai", tier: 2, inputCostPer1M: 0.15, outputCostPer1M: 0.60, flex: true, capabilities: { code: 0.86, reasoning: 0.84, math: 0.85, general: 0.82 } },
 
   // --- Alibaba (Qwen) — math / reasoning specialist ---
   { id: "qwen3-32b",      displayName: "Qwen3 32B",      provider: "alibaba", tier: 1, inputCostPer1M: 0.10, outputCostPer1M: 0.30, flex: true, capabilities: { code: 0.66, reasoning: 0.68, math: 0.72, general: 0.62 } },
