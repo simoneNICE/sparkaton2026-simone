@@ -1,5 +1,6 @@
 import {
   MODEL_CATALOG,
+  QUALITY_FIRST_SCORE,
   affinityFloorFromScore,
   qualityBiasFromPref,
 } from "./config";
@@ -146,6 +147,8 @@ function routeFromAssessment(
 
   const skill = skillOverride ?? dominantSkill(assessment);
   const affinityFloor = affinityFloorFromScore(adjustedScore);
+  // Hardest prompts flip to quality-first (strongest model), not cost-first.
+  const qualityFirst = adjustedScore >= QUALITY_FIRST_SCORE;
   const { selected: selectedModel, premium: premiumModel } = selectByValue(
     assessment.estInputTokens,
     assessment.estOutputTokens,
@@ -153,6 +156,7 @@ function routeFromAssessment(
     affinityFloor,
     providerPref,
     flex,
+    qualityFirst,
   );
 
   return buildResult(
